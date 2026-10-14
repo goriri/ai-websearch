@@ -1,0 +1,11 @@
+.git
+.venv/
+venv/
+__pycache__/
+*.pyc
+tests/
+scripts/
+docs/
+demo/
+*.md
+!app/**

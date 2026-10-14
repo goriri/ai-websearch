@@ -1,0 +1,129 @@
+"""FastAPI web server for Prism multimodal search."""
+
+import asyncio
+import collections
+import json
+import logging
+import os
+import time
+
+import fastapi
+from fastapi import responses, staticfiles
+
+from app import pipeline
+from app.config import settings
+
+logging.basicConfig(
+    level=os.environ.get("LOG_LEVEL", "INFO"),
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+log = logging.getLogger("prism")
+
+STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+
+app = fastapi.FastAPI(title="Prism Multimodal Search", docs_url=None, redoc_url=None)
+app.mount("/static", staticfiles.StaticFiles(directory=STATIC_DIR), name="static")
+
+_hits: dict[str, collections.deque] = collections.defaultdict(collections.deque)
+
+
+def _client_ip(request: fastapi.Request) -> str:
+  fwd = request.headers.get("x-forwarded-for")
+  if fwd:
+    return fwd.split(",")[0].strip()
+  return request.client.host if request.client else "unknown"
+
+
+def _rate_limited(ip: str) -> bool:
+  limit = settings.rate_limit_per_min
+  if limit <= 0:
+    return False
+  now = time.monotonic()
+  q = _hits[ip]
+  while q and now - q[0] > 60:
+    q.popleft()
+  if len(q) >= limit:
+    return True
+  q.append(now)
+  return False
+
+
+@app.get("/", include_in_schema=False)
+async def index():
+  return responses.FileResponse(
+      os.path.join(STATIC_DIR, "index.html"),
+      headers={"Cache-Control": "no-cache"},
+  )
+
+
+@app.get("/health")
+async def healthz():
+  return {"ok": True}
+
+
+@app.get("/api/config")
+async def config():
+  return {
+      "answer_model": settings.answer_model,
+      "pro_model": settings.pro_model,
+      "image_model": settings.image_model,
+      "lite_model": settings.lite_model,
+  }
+
+
+def _sse(event: str, data: dict) -> bytes:
+  return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n".encode()
+
+
+@app.post("/api/search")
+async def search(req: pipeline.SearchRequest, request: fastapi.Request):
+  if len(req.query) > settings.max_query_chars:
+    raise fastapi.HTTPException(400, "Query is too long.")
+  if _rate_limited(_client_ip(request)):
+    raise fastapi.HTTPException(429, "Too many searches, please wait a minute.")
+  try:
+    pipeline.build_contents(req)  # Validates the optional attached image.
+  except ValueError as e:
+    raise fastapi.HTTPException(400, str(e)) from e
+
+  queue: asyncio.Queue = asyncio.Queue()
+
+  async def emit(event: str, data: dict) -> None:
+    await queue.put(_sse(event, data))
+
+  runner = pipeline.run_visual if req.mode == "visual" else pipeline.run_search
+  log.info("search mode=%s model=%s images=%s q=%r", req.mode, req.model,
+           req.images, req.query[:200])
+
+  async def run():
+    try:
+      await runner(req, emit)
+    except Exception as e:  # pylint: disable=broad-except
+      log.exception("pipeline crashed")
+      await emit("error", {"message": str(e)})
+      await emit("done", {})
+    finally:
+      await queue.put(None)
+
+  async def stream():
+    task = asyncio.create_task(run())
+    try:
+      yield b": stream-open\n\n"
+      while True:
+        try:
+          item = await asyncio.wait_for(queue.get(), timeout=15)
+        except asyncio.TimeoutError:
+          yield b": keep-alive\n\n"
+          continue
+        if item is None:
+          break
+        yield item
+    finally:
+      if not task.done():
+        task.cancel()
+
+  return responses.StreamingResponse(
+      stream(),
+      media_type="text/event-stream",
+      headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+  )

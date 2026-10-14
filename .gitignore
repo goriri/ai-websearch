@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+.env.*
+*.log
+.DS_Store
+demo/_frames/
+application_default_credentials.json
+*service-account*.json
+*-key.json

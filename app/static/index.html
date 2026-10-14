@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Prism · Multimodal AI Search</title>
+  <meta name="description" content="Ask in natural language. Get answers with text and images interleaved, powered by Gemini.">
+  <meta name="color-scheme" content="light dark">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%234285f4'/%3E%3Cstop offset='.5' stop-color='%239b72cb'/%3E%3Cstop offset='1' stop-color='%23d96570'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M32 4 60 54H4z' fill='url(%23g)'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body class="landing">
+  <header class="topbar">
+    <button class="brand" id="homeBtn" title="New search" type="button">
+      <span class="logo" aria-hidden="true"></span><span class="wordmark">Prism</span>
+    </button>
+    <div class="topbar-actions">
+      <button class="ghost-btn" id="newBtn" type="button" title="Start a new search">
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <span>New</span>
+      </button>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero" id="hero">
+      <div class="hero-mark"><span class="logo big" aria-hidden="true"></span></div>
+      <h1 class="hero-title">Ask anything. <span class="grad">See the answer.</span></h1>
+      <p class="hero-sub">Natural-language search with text and images woven together — grounded in Google Search, powered by Gemini.</p>
+      <div id="heroComposerSlot"></div>
+      <div class="examples" id="examples"></div>
+    </section>
+
+    <section class="thread" id="thread" aria-live="polite"></section>
+  </main>
+
+  <div class="dock" id="dock"><div id="dockComposerSlot"></div></div>
+
+  <!-- Composer (moved between hero and dock) -->
+  <template id="composerTpl">
+    <form class="composer" id="composer" autocomplete="off">
+      <div class="attach-preview" id="attachPreview" hidden>
+        <img alt="Attached image" id="attachImg">
+        <button type="button" class="attach-remove" id="attachRemove" title="Remove image" aria-label="Remove attached image">×</button>
+      </div>
+      <div class="composer-row">
+        <label class="icon-btn" title="Search with an image" aria-label="Attach image">
+          <input type="file" accept="image/*" id="fileInput" hidden>
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="9" cy="10" r="2" fill="currentColor"/><path d="m4 18 5-5 4 4 3-3 4 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+        </label>
+        <textarea id="q" rows="1" placeholder="Ask anything…" aria-label="Search query" maxlength="2000"></textarea>
+        <button class="send" id="sendBtn" type="submit" title="Search (Enter)" aria-label="Search">
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+      <div class="composer-opts">
+        <div class="seg" role="radiogroup" aria-label="Mode">
+          <button type="button" role="radio" data-mode="search" aria-checked="true" title="Grounded answer with real images from the web">
+            <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="m16 16 4.5 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>Search</button>
+          <button type="button" role="radio" data-mode="visual" aria-checked="false" title="Gemini writes and illustrates the answer with generated images">
+            <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z" fill="currentColor"/><path d="M19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9z" fill="currentColor"/></svg>Visual</button>
+        </div>
+        <div class="opt-group">
+          <label class="pill-select" title="Answer model">
+            <span>Model</span>
+            <select id="modelSel"><option value="fast">Fast</option><option value="pro">Pro</option></select>
+          </label>
+          <label class="pill-select" id="imgPrefWrap" title="Where images come from">
+            <span>Images</span>
+            <select id="imgSel"><option value="auto">Web + AI fallback</option><option value="web">Web only</option><option value="ai">AI-generated</option></select>
+          </label>
+        </div>
+      </div>
+    </form>
+  </template>
+
+  <div class="lightbox" id="lightbox" hidden>
+    <button class="lb-close" id="lbClose" aria-label="Close">×</button>
+    <figure>
+      <img id="lbImg" alt="">
+      <figcaption id="lbCap"></figcaption>
+    </figure>
+  </div>
+
+  <script src="/static/vendor/marked.umd.js"></script>
+  <script src="/static/vendor/purify.min.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>
