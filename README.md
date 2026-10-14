@@ -33,7 +33,11 @@ needs no third-party API keys.
     the best match, rejecting logos, text and off-topic images. If no web image
     fits, Prism falls back to Wikimedia Commons, then (optionally) to a
     Gemini-generated illustration labeled *AI-generated*.
-*   **Visual mode.** Gemini's **native interleaved text + image output**
+*   **Real images only by default.** Image generation is off
+    (`ALLOW_IMAGE_GENERATION=false`) to minimize cost: every picture is a real
+    photo from the web, linked to its source. Set it to `true` to enable the
+    AI fallback and Visual mode.
+*   **Visual mode (optional, needs `ALLOW_IMAGE_GENERATION=true`).** Gemini's **native interleaved text + image output**
     (`gemini-3.1-flash-image`, also grounded with Google Search) writes the
     answer and generates illustrations inline in a single streamed call.
 *   **Multimodal input.** Attach, paste or drag in an image ("what is this
@@ -158,6 +162,8 @@ Env var                     | Default                   | Meaning
 `IMAGE_MODEL`               | `gemini-3.1-flash-image`  | Image search grounding, generation, Visual mode
 `LITE_MODEL`                | `gemini-3.1-flash-lite`   | Visual re-ranking, related questions
 `RERANK_IMAGES`             | `true`                    | Visually verify web images
+`ALLOW_IMAGE_GENERATION`    | `false`                   | Cost control: `false` = only real web/Wikimedia photos, never generated images (Visual mode and AI image options are hidden)
+`IMAGE_SEARCH_MAX_TOKENS`   | `128`                     | Output cap for the image-search call (a Gemini image needs >1,000 tokens, so generation is impossible)
 `ENABLE_WIKIMEDIA`          | `true`                    | Wikimedia Commons fallback
 `MAX_IMAGE_SLOTS`           | `6`                       | Max images per answer
 `IMAGE_CONCURRENCY`         | `6`                       | Parallel slot resolutions per request

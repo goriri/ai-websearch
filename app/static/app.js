@@ -38,7 +38,8 @@
   const state = {
     mode: "search",
     model: "fast",
-    images: "auto",
+    images: "web",
+    imageGeneration: false, // from /api/config
     attachment: null, // data URL
     history: [], // [{role, text}]
     busy: false,
@@ -525,11 +526,30 @@
     }
   }
 
+  // When the server disables image generation (cost control), hide Visual
+  // mode and the image-source choices that would generate images.
+  function applyServerConfig(cfg) {
+    state.imageGeneration = !!cfg.image_generation;
+    if (state.imageGeneration) return;
+    setMode("search");
+    composer.querySelector('.seg button[data-mode="visual"]').remove();
+    composer.querySelector(".seg").hidden = true;
+    $("#imgPrefWrap", composer).hidden = true;
+    state.images = "web";
+  }
+
   // ------------------------------------------------------------------ Boot
-  mountComposer();
-  autosize();
-  const params = new URLSearchParams(location.search);
-  if (params.get("mode") === "visual") setMode("visual");
-  if (params.get("q")) runSearch(params.get("q"));
-  else q.focus();
+  (async () => {
+    mountComposer();
+    autosize();
+    try {
+      applyServerConfig(await (await fetch("/api/config")).json());
+    } catch (_) {
+      applyServerConfig({ image_generation: false });
+    }
+    const params = new URLSearchParams(location.search);
+    if (params.get("mode") === "visual" && state.imageGeneration) setMode("visual");
+    if (params.get("q")) runSearch(params.get("q"));
+    else q.focus();
+  })();
 })();

@@ -55,7 +55,7 @@ class SearchRequest(pydantic.BaseModel):
   query: str = pydantic.Field(min_length=1)
   mode: Literal["search", "visual"] = "search"
   model: Literal["fast", "pro"] = "fast"
-  images: Literal["auto", "web", "ai"] = "auto"
+  images: Literal["auto", "web", "ai"] = "web"
   history: list[Turn] = pydantic.Field(default_factory=list, max_length=20)
   # Optional user-supplied image as a data URL (multimodal query).
   image: Optional[str] = None

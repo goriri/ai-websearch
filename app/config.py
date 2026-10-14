@@ -35,6 +35,15 @@ class Settings:
 
   rerank_images: bool = _bool("RERANK_IMAGES", True)
   enable_wikimedia: bool = _bool("ENABLE_WIKIMEDIA", True)
+  # Cost control: when false (default), Prism never generates images. Only
+  # real web / Wikimedia photos are shown, Visual mode and the "AI-generated"
+  # image preference are disabled, and the AI fallback for empty slots is off.
+  allow_image_generation: bool = _bool("ALLOW_IMAGE_GENERATION", False)
+  # Output-token cap for the image-search call. That call only needs the
+  # search results (grounding metadata), not the text, and a Gemini image
+  # costs >1,000 output tokens, so a small cap makes accidental image
+  # generation impossible and bounds the cost of each call.
+  image_search_max_tokens: int = int(os.environ.get("IMAGE_SEARCH_MAX_TOKENS", "128"))
   max_image_slots: int = int(os.environ.get("MAX_IMAGE_SLOTS", "6"))
   image_concurrency: int = int(os.environ.get("IMAGE_CONCURRENCY", "6"))
   image_max_px: int = int(os.environ.get("IMAGE_MAX_PX", "1024"))

@@ -13,6 +13,21 @@ from PIL import Image
 from app import images, main, pipeline
 
 
+import contextlib
+
+
+@contextlib.contextmanager
+def _setting(name, value):
+  """Temporarily overrides a field of the frozen Settings dataclass."""
+  from app.config import settings
+  old = getattr(settings, name)
+  object.__setattr__(settings, name, value)
+  try:
+    yield
+  finally:
+    object.__setattr__(settings, name, old)
+
+
 def _png(w=640, h=480, color=(200, 30, 30)) -> bytes:
   buf = io.BytesIO()
   Image.new("RGB", (w, h), color).save(buf, format="PNG")
@@ -68,9 +83,16 @@ class ApiTest(unittest.TestCase):
       calls.append(req.mode)
       await emit("done", {})
 
-    with mock.patch.object(pipeline, "run_visual", fake_visual):
+    with _setting("allow_image_generation", True), \
+         mock.patch.object(pipeline, "run_visual", fake_visual):
       self.client.post("/api/search", json={"query": "hi", "mode": "visual"})
     self.assertEqual(calls, ["visual"])
+
+  def test_visual_mode_rejected_when_generation_disabled(self):
+    with _setting("allow_image_generation", False):
+      r = self.client.post("/api/search", json={"query": "hi", "mode": "visual"})
+      self.assertEqual(r.status_code, 400)
+      self.assertFalse(self.client.get("/api/config").json()["image_generation"])
 
   def test_pipeline_crash_becomes_error_event(self):
     async def boom(req, emit):
@@ -173,7 +195,7 @@ class ResolveSlotTest(unittest.IsolatedAsyncioTestCase):
 
   async def test_fallback_to_wikimedia_then_generation(self):
     gen = images.ResolvedImage(data_url="data:x", width=1, height=1, kind="generated")
-    with mock.patch.object(images, "google_image_search", mock.AsyncMock(return_value=[])), \
+    with _setting("allow_image_generation", True), mock.patch.object(images, "google_image_search", mock.AsyncMock(return_value=[])), \
          mock.patch.object(images, "wikimedia_search", mock.AsyncMock(return_value=[])), \
          mock.patch.object(images, "generate_image", mock.AsyncMock(return_value=gen)) as g:
       self.assertIs(await images.resolve_slot("q", "c", "ctx", "auto", set()), gen)
@@ -197,10 +219,41 @@ class ResolveSlotTest(unittest.IsolatedAsyncioTestCase):
 
   async def test_ai_preference_generates(self):
     gen = images.ResolvedImage(data_url="data:x", width=1, height=1, kind="generated")
-    with mock.patch.object(images, "generate_image", mock.AsyncMock(return_value=gen)), \
+    with _setting("allow_image_generation", True), mock.patch.object(images, "generate_image", mock.AsyncMock(return_value=gen)), \
          mock.patch.object(images, "google_image_search", mock.AsyncMock()) as s:
       self.assertIs(await images.resolve_slot("q", "c", "ctx", "ai", set()), gen)
       s.assert_not_awaited()
+
+
+class NoGenerationTest(unittest.IsolatedAsyncioTestCase):
+  """With ALLOW_IMAGE_GENERATION=false (the default) nothing is ever generated."""
+
+  async def test_default_is_disabled(self):
+    from app.config import Settings
+    self.assertFalse(Settings().allow_image_generation)
+
+  async def test_preferences_never_generate(self):
+    fake_client = mock.MagicMock()
+    with _setting("allow_image_generation", False), \
+         mock.patch.object(images, "client", return_value=fake_client), \
+         mock.patch.object(images, "google_image_search", mock.AsyncMock(return_value=[])), \
+         mock.patch.object(images, "wikimedia_search", mock.AsyncMock(return_value=[])):
+      for pref in ("auto", "ai", "web"):
+        self.assertIsNone(await images.resolve_slot("q", "c", "ctx", pref, set()))
+      self.assertIsNone(await images.generate_image("c", "ctx"))
+    fake_client.aio.models.generate_content.assert_not_called()
+
+  async def test_image_search_call_is_capped(self):
+    resp = mock.MagicMock()
+    resp.candidates = []
+    gc = mock.AsyncMock(return_value=resp)
+    fake_client = mock.MagicMock()
+    fake_client.aio.models.generate_content = gc
+    with mock.patch.object(images, "client", return_value=fake_client):
+      await images.google_image_search("q", "ctx")
+    cfg = gc.await_args.kwargs["config"]
+    self.assertEqual(cfg.max_output_tokens, images.settings.image_search_max_tokens)
+    self.assertLess(cfg.max_output_tokens, 1000)  # An image needs >1,000 tokens.
 
 
 if __name__ == "__main__":

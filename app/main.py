@@ -68,6 +68,7 @@ async def config():
       "pro_model": settings.pro_model,
       "image_model": settings.image_model,
       "lite_model": settings.lite_model,
+      "image_generation": settings.allow_image_generation,
   }
 
 
@@ -79,6 +80,9 @@ def _sse(event: str, data: dict) -> bytes:
 async def search(req: pipeline.SearchRequest, request: fastapi.Request):
   if len(req.query) > settings.max_query_chars:
     raise fastapi.HTTPException(400, "Query is too long.")
+  if req.mode == "visual" and not settings.allow_image_generation:
+    raise fastapi.HTTPException(
+        400, "Visual mode is disabled (image generation is turned off).")
   if _rate_limited(_client_ip(request)):
     raise fastapi.HTTPException(429, "Too many searches, please wait a minute.")
   try:

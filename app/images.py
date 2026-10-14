@@ -169,8 +169,8 @@ async def google_image_search(query: str, context: str) -> list[Candidate]:
   prompt = (
       f"What does this look like: {query}?"
       + (f" (Context: {context[:300]})" if context else "")
-      + " Look it up with Google image search and describe in two sentences"
-      " what the real photos you found show. Answer in text only."
+      + " Look it up with Google image search, then reply with one short"
+      " sentence. Text only."
   )
   for attempt in range(2):
     try:
@@ -178,7 +178,10 @@ async def google_image_search(query: str, context: str) -> list[Candidate]:
           model=settings.image_model,
           contents=prompt,
           config=types.GenerateContentConfig(
+              # Image models reject TEXT-only; IMAGE output is never used and
+              # is made impossible by the small output-token cap.
               response_modalities=["TEXT", "IMAGE"],
+              max_output_tokens=settings.image_search_max_tokens,
               tools=[
                   types.Tool(
                       google_search=types.GoogleSearch(
@@ -210,7 +213,8 @@ async def google_image_search(query: str, context: str) -> list[Candidate]:
     if cands:
       return cands
     # The model occasionally answers from memory without searching; nudge it.
-    prompt = f"Search Google Images for photos of {query} and describe them."
+    prompt = (f"Search Google Images for photos of {query}, then reply with"
+              " one short sentence. Text only.")
   return []
 
 
@@ -263,6 +267,8 @@ async def wikimedia_search(query: str, limit: int = 4) -> list[Candidate]:
 
 async def generate_image(caption: str, context: str) -> Optional[ResolvedImage]:
   """Generates an illustrative image with Gemini (native image output)."""
+  if not settings.allow_image_generation:
+    return None  # Cost control: generation disabled.
   prompt = (
       "Create a single high-quality, realistic, informative illustration for a"
       f" search result about: {context[:300]}\nThe image should show: {caption}"
@@ -414,8 +420,11 @@ async def resolve_slot(
   """Finds the best image for a slot according to the user's preference.
 
   preference: "auto" (real web images, AI-generated fallback), "web" (real
-  images only) or "ai" (always generate).
+  images only) or "ai" (always generate). When image generation is disabled
+  (ALLOW_IMAGE_GENERATION=false), every preference behaves like "web".
   """
+  if not settings.allow_image_generation:
+    preference = "web"
   if preference == "ai":
     return await generate_image(caption, context)
 

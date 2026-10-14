@@ -155,6 +155,23 @@ flowchart TD
   GEN --> OK2["emit image (kind = generated, AI badge)"]
 ```
 
+### Cost control: real images only (default)
+
+With `ALLOW_IMAGE_GENERATION=false` (the default) Prism never generates an image:
+
+* `resolve_slot` treats every preference as `web`: Gemini image search, then
+  Wikimedia, otherwise the slot is dropped. `generate_image` returns early.
+* `/api/search` rejects `mode: "visual"` with 400. `/api/config` reports
+  `image_generation: false`, and the UI hides Visual mode and the image-source
+  selector.
+* The image-search call must use `response_modalities=["TEXT","IMAGE"]`
+  (image models reject TEXT-only), but it is capped with
+  `max_output_tokens=IMAGE_SEARCH_MAX_TOKENS` (128). A Gemini image costs more
+  than 1,000 output tokens, so the cap makes image output impossible and bounds
+  each call to about 60 output tokens. Prism only needs the grounding metadata
+  (image URLs), not the text. In tests: 60 capped calls produced 0 image
+  tokens, with the same or better search-result rate as before.
+
 ### Why Gemini's image model does the image search
 
 Gemini's `google_search` tool takes `search_types` with `web_search` and
