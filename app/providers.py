@@ -1,0 +1,179 @@
+"""Third-party search providers (alternative to Gemini's built-in Google Search
+grounding).
+
+Image search providers return `images.Candidate` lists and feed the same
+download → normalize → visual re-rank → dedupe path as Gemini image search.
+The web search provider returns plain result dicts that `pipeline.py` passes to
+Gemini as context, so the answer model doesn't need Gemini's grounding tool.
+
+Providers:
+  images: gemini (default) | serpapi (Google Images via SerpApi) | brave |
+          openverse (keyless, CC-licensed images only)
+  web:    gemini (default, Grounding with Google Search) | serpapi (Google web
+          results via SerpApi)
+"""
+
+import logging
+from typing import Optional
+from urllib.parse import urlparse
+
+import httpx
+
+from app.config import settings
+from app.textproc import clean_title
+
+log = logging.getLogger(__name__)
+
+_api_http: Optional[httpx.AsyncClient] = None
+
+
+def api_http() -> httpx.AsyncClient:
+  global _api_http
+  if _api_http is None:
+    _api_http = httpx.AsyncClient(timeout=httpx.Timeout(12.0, connect=4.0))
+  return _api_http
+
+
+def _domain(url: str) -> str:
+  return (urlparse(url).hostname or "").removeprefix("www.")
+
+
+class ProviderError(RuntimeError):
+  pass
+
+
+def _require(key: str, name: str) -> str:
+  if not key:
+    raise ProviderError(f"{name} API key is not configured")
+  return key
+
+
+# --------------------------------------------------------------------------
+# Image search
+# --------------------------------------------------------------------------
+
+
+async def serpapi_images(query: str, limit: int = 8):
+  """Google Images results via SerpApi (engine=google_images)."""
+  from app.images import Candidate  # Local import avoids a cycle.
+
+  key = _require(settings.serpapi_api_key, "SerpApi")
+  r = await api_http().get("https://serpapi.com/search.json", params={
+      "engine": "google_images", "q": query, "api_key": key,
+      "hl": "en", "safe": "active", "ijn": 0,
+  })
+  r.raise_for_status()
+  out = []
+  for it in r.json().get("images_results", [])[: limit * 2]:
+    url = it.get("original") or it.get("thumbnail")
+    if not url or it.get("is_product"):
+      continue
+    if (it.get("original_width") or 1000) < 300:
+      continue
+    page = it.get("link", "")
+    out.append(Candidate(image_url=url, source_url=page, title=clean_title(it.get("title")),
+                         domain=it.get("source") or _domain(page), kind="web"))
+    if len(out) >= limit:
+      break
+  return out
+
+
+async def brave_images(query: str, limit: int = 8):
+  """Brave Search image results."""
+  from app.images import Candidate
+
+  key = _require(settings.brave_api_key, "Brave Search")
+  r = await api_http().get(
+      "https://api.search.brave.com/res/v1/images/search",
+      params={"q": query, "count": limit * 2, "safesearch": "strict"},
+      headers={"X-Subscription-Token": key, "Accept": "application/json"},
+  )
+  r.raise_for_status()
+  out = []
+  for it in r.json().get("results", []):
+    props = it.get("properties") or {}
+    url = props.get("url") or (it.get("thumbnail") or {}).get("src")
+    if not url:
+      continue
+    page = it.get("url", "")
+    out.append(Candidate(image_url=url, source_url=page, title=clean_title(it.get("title")),
+                         domain=it.get("source") or _domain(page), kind="web"))
+    if len(out) >= limit:
+      break
+  return out
+
+
+async def openverse_images(query: str, limit: int = 8):
+  """Openverse (WordPress) CC-licensed image search. Keyless, rate-limited.
+
+  Openverse matches all keywords, so long, specific slot queries often return
+  nothing; retry with the first few words.
+  """
+  words = query.split()
+  for q in dict.fromkeys([query, " ".join(words[:4]), " ".join(words[:2])]):
+    out = await _openverse_once(q, limit)
+    if out:
+      return out
+  return []
+
+
+async def _openverse_once(query: str, limit: int):
+  from app.images import Candidate
+
+  r = await api_http().get(
+      "https://api.openverse.org/v1/images/",
+      params={"q": query, "page_size": limit, "mature": "false"},
+      headers={"User-Agent": settings.wikimedia_user_agent},
+  )
+  r.raise_for_status()
+  out = []
+  for it in r.json().get("results", []):
+    url = it.get("url")
+    if not url:
+      continue
+    lic = " ".join(x for x in ((it.get("license") or "").upper(), it.get("license_version") or "") if x)
+    creator = it.get("creator") or ""
+    out.append(Candidate(
+        image_url=url, source_url=it.get("foreign_landing_url") or url,
+        title=clean_title(it.get("title")), domain=_domain(it.get("foreign_landing_url") or url),
+        kind="web", license=" · ".join(x for x in (f"CC {lic}" if lic else "", creator[:60]) if x)))
+  return out
+
+
+IMAGE_PROVIDERS = {
+    "serpapi": serpapi_images,
+    "brave": brave_images,
+    "openverse": openverse_images,
+}
+
+
+# --------------------------------------------------------------------------
+# Web search (answer context)
+# --------------------------------------------------------------------------
+
+
+async def serpapi_web(query: str, limit: int = 8) -> list[dict]:
+  """Google web results via SerpApi (engine=google)."""
+  key = _require(settings.serpapi_api_key, "SerpApi")
+  r = await api_http().get("https://serpapi.com/search.json", params={
+      "engine": "google", "q": query, "api_key": key, "hl": "en", "num": limit,
+  })
+  r.raise_for_status()
+  data = r.json()
+  results = []
+  ab = data.get("answer_box") or {}
+  if ab.get("snippet") or ab.get("answer"):
+    results.append({"title": clean_title(ab.get("title") or "Answer"),
+                    "url": ab.get("link", ""), "domain": _domain(ab.get("link", "")),
+                    "snippet": ab.get("answer") or ab.get("snippet")})
+  for it in data.get("organic_results", []):
+    if not it.get("link"):
+      continue
+    results.append({"title": clean_title(it.get("title")), "url": it["link"],
+                    "domain": _domain(it["link"]), "snippet": it.get("snippet", "")})
+    if len(results) >= limit:
+      break
+  return results
+
+
+WEB_PROVIDERS = {"serpapi": serpapi_web}

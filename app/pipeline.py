@@ -27,7 +27,7 @@ import httpx
 import pydantic
 from google.genai import types
 
-from app import images
+from app import images, providers
 from app.config import settings
 from app.genai_client import client
 from app.textproc import (
@@ -238,6 +238,33 @@ def _thinking(model: str, pro: bool) -> Optional[types.ThinkingConfig]:
   return types.ThinkingConfig(thinking_level="HIGH" if pro else "LOW")
 
 
+_CITE_RE = re.compile(r"\[(\d{1,2}(?:\s*,\s*\d{1,2})*)\](?!\()")
+
+
+def citations_from_brackets(markdown: str, n_sources: int) -> str:
+  """Converts model-written [1] / [2, 3] citations into @@CITE tokens."""
+  def repl(m):
+    nums = [int(x) for x in re.split(r"\s*,\s*", m.group(1))]
+    nums = [n for n in nums if 1 <= n <= n_sources]
+    return f"@@CITE:{','.join(map(str, nums))}@@" if nums else m.group(0)
+  return _CITE_RE.sub(repl, markdown)
+
+
+def third_party_context(results: list[dict]) -> str:
+  lines = ["Web search results (cite them inline as [n]):"]
+  for i, r in enumerate(results, 1):
+    lines.append(f"[{i}] {r['title']} ({r['domain']})\n{r['snippet']}\n{r['url']}")
+  return "\n\n".join(lines)
+
+
+THIRD_PARTY_RULES = (
+    "\nYou are given numbered web search results from a search API instead of a"
+    " search tool. Base the answer on them (and well-established knowledge);"
+    " cite supporting results inline right after the sentence as [n] or [n, m]."
+    " Don't invent sources.\n"
+)
+
+
 async def run_search(req: SearchRequest, emit: Emit) -> None:
   image_tasks: list[asyncio.Task] = []
   try:
@@ -262,6 +289,22 @@ async def _run_search(
   )
 
   await emit("status", {"stage": "search", "message": "Searching the web"})
+
+  # Third-party web search (WEB_PROVIDER=serpapi): fetch results first and pass
+  # them to Gemini as context instead of using the Google Search tool.
+  tp_results: Optional[list[dict]] = None
+  if settings.web_provider in providers.WEB_PROVIDERS:
+    try:
+      tp_results = await providers.WEB_PROVIDERS[settings.web_provider](req.query)
+    except Exception as e:  # pylint: disable=broad-except
+      log.warning("%s web search failed (%s); using Gemini grounding", settings.web_provider, e)
+  if tp_results:
+    sysprompt = sysprompt.replace(
+        "Research the user's request with Google Search, then write",
+        "Using the provided web search results, write") + THIRD_PARTY_RULES
+    last = contents[-1]
+    last.parts.append(types.Part.from_text(text=third_party_context(tp_results)))
+  search_tools = None if tp_results else [types.Tool(google_search=types.GoogleSearch())]
 
   sem = asyncio.Semaphore(settings.image_concurrency)
   used_images: set[str] = set()
@@ -294,7 +337,7 @@ async def _run_search(
           contents=contents,
           config=types.GenerateContentConfig(
               system_instruction=sysprompt,
-              tools=[types.Tool(google_search=types.GoogleSearch())],
+              tools=search_tools,
               thinking_config=_thinking(model, pro),
           ),
       )
@@ -338,8 +381,14 @@ async def _run_search(
       await emit("status", {"stage": "retry", "message": "Retrying with a backup model"})
 
   answer_md = "".join(assembled)
-  sources, supports, sep, queries = await _sources_from_grounding(gm)
-  final_md = insert_citations(answer_md, supports)
+  if tp_results:
+    sources = [{"n": i, "title": r["title"] or r["domain"], "url": r["url"],
+                "domain": r["domain"]} for i, r in enumerate(tp_results, 1)]
+    sep, queries = "", [req.query]
+    final_md = citations_from_brackets(answer_md, len(sources))
+  else:
+    sources, supports, sep, queries = await _sources_from_grounding(gm)
+    final_md = insert_citations(answer_md, supports)
   await emit("final", {
       "markdown": final_md,
       "sources": sources,

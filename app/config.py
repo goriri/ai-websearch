@@ -44,6 +44,15 @@ class Settings:
   # costs >1,000 output tokens, so a small cap makes accidental image
   # generation impossible and bounds the cost of each call.
   image_search_max_tokens: int = int(os.environ.get("IMAGE_SEARCH_MAX_TOKENS", "128"))
+
+  # Search providers. "gemini" = Gemini's built-in Google Search grounding.
+  # Third-party alternatives (see app/providers.py):
+  #   IMAGE_PROVIDER: gemini | serpapi | brave | openverse
+  #   WEB_PROVIDER:   gemini | serpapi
+  image_provider: str = os.environ.get("IMAGE_PROVIDER", "gemini")
+  web_provider: str = os.environ.get("WEB_PROVIDER", "gemini")
+  serpapi_api_key: str = os.environ.get("SERPAPI_API_KEY", "")
+  brave_api_key: str = os.environ.get("BRAVE_API_KEY", "")
   max_image_slots: int = int(os.environ.get("MAX_IMAGE_SLOTS", "6"))
   image_concurrency: int = int(os.environ.get("IMAGE_CONCURRENCY", "6"))
   image_max_px: int = int(os.environ.get("IMAGE_MAX_PX", "1024"))

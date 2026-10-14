@@ -164,6 +164,9 @@ Env var                     | Default                   | Meaning
 `RERANK_IMAGES`             | `true`                    | Visually verify web images
 `ALLOW_IMAGE_GENERATION`    | `false`                   | Cost control: `false` = only real web/Wikimedia photos, never generated images (Visual mode and AI image options are hidden)
 `IMAGE_SEARCH_MAX_TOKENS`   | `128`                     | Output cap for the image-search call (a Gemini image needs >1,000 tokens, so generation is impossible)
+`IMAGE_PROVIDER`            | `gemini`                  | Image search: `gemini` (Google image-search grounding), `serpapi` (Google Images via SerpApi), `brave`, `openverse` (keyless, CC only)
+`WEB_PROVIDER`              | `gemini`                  | Answer grounding: `gemini` (Grounding with Google Search) or `serpapi` (Google web results passed to Gemini as context)
+`SERPAPI_API_KEY` / `BRAVE_API_KEY` | —                | Keys for the third-party providers (set as env vars / Secret Manager, never commit)
 `ENABLE_WIKIMEDIA`          | `true`                    | Wikimedia Commons fallback
 `MAX_IMAGE_SLOTS`           | `6`                       | Max images per answer
 `IMAGE_CONCURRENCY`         | `6`                       | Parallel slot resolutions per request

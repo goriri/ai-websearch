@@ -218,6 +218,23 @@ async def google_image_search(query: str, context: str) -> list[Candidate]:
   return []
 
 
+async def search_images(query: str, context: str) -> list[Candidate]:
+  """Dispatches to the configured image provider (IMAGE_PROVIDER)."""
+  name = settings.image_provider
+  if name == "gemini":
+    return await google_image_search(query, context)
+  from app import providers  # Local import avoids a cycle.
+  fn = providers.IMAGE_PROVIDERS.get(name)
+  if fn is None:
+    log.error("unknown IMAGE_PROVIDER %r; falling back to gemini", name)
+    return await google_image_search(query, context)
+  try:
+    return await fn(query)
+  except (httpx.HTTPError, providers.ProviderError, ValueError) as e:
+    log.warning("%s image search failed for %r: %s", name, query, e)
+    return []
+
+
 async def wikimedia_search(query: str, limit: int = 4) -> list[Candidate]:
   if not settings.enable_wikimedia:
     return []
@@ -430,7 +447,7 @@ async def resolve_slot(
 
   exclude = exclude_urls if exclude_urls is not None else set()
   img = None
-  web = await google_image_search(query, context)
+  web = await search_images(query, context)
   if web:
     img = await _first_valid(web, caption, query, exclude)
   if img is None:
