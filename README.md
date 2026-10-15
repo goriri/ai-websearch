@@ -28,11 +28,13 @@ needs no third-party API keys by default.
 
 Prism supports three distinct search architectures, evaluated across 8 diverse visual queries:
 
-| Architecture | First text (p50) | Full answer (p50) | Images / query | Relevance | Infrastructure & Cost |
-|---|---|---|---|---|---|
-| **A. Gemini-native (default)** | 4.8 s | **20.5 s** | **2.9** | **19/23 (83%)** | 1 Vertex AI project, 0 external keys |
-| **B. Third-party search** | **4.3 s** | 33.2 s | 2.4 | 16/19 (84%) | Vertex AI + SerpApi (~5 searches/query) |
-| **C. SerpApi Google AI Mode** | 8.5 s (no stream) | **8.5 s** | 0.1 | 1/1 | 1 SerpApi search/query, 0 Gemini |
+| Architecture | First text (p50) | Full answer (p50) | Images / query | Relevance | Measured cost / query* | Infrastructure |
+|---|---|---|---|---|---|---|
+| **A. Gemini-native (default)** | 4.8 s | **20.5 s** | **2.9** | **19/23 (83%)** | $0.12–0.22 | 1 Vertex AI project, 0 external keys |
+| **B. Third-party search** | **4.3 s** | 33.2 s | 2.4 | 16/19 (84%) | ~$0.08 | Vertex AI + SerpApi (~5 searches/query) |
+| **C. SerpApi Google AI Mode** | 8.5 s (no stream) | **8.5 s** | 0.1 | 1/1 | **$0.015** | 1 SerpApi search/query, 0 Gemini |
+
+\* Cost is measured per request (tokens × list prices) and shown live in the UI and the compare portal. Gemini 3 Google Search grounding is billed **per search query** ($14 / 1,000, web and image search alike), and each image slot's image search runs ~2–3 queries, so grounding is ~90% of architecture A's cost (e.g. $0.21 of $0.22: 15 queries vs ~$0.01 of tokens). The 5,000 free queries/month are ignored. SerpApi is priced at $0.015/search (Developer plan; `SERPAPI_COST_PER_SEARCH`).
 
 *   **Architecture A (Gemini-native):** Answers stream from `gemini-3.8-flash` using Grounding with Google Search. Image slots resolve concurrently using `gemini-3.1-flash-image` image search grounding and `gemini-3.1-flash-lite` visual re-ranking.
 *   **Architecture B (Third-party search):** SerpApi fetches Google web search results passed to `gemini-3.8-flash` as context. Image slots are retrieved via SerpApi Google Images and pass through the same Pillow normalization and visual re-ranking pipeline.
@@ -46,7 +48,7 @@ Prism includes an interactive comparison portal at `/compare` to evaluate all th
 
 ![Compare portal: the same query answered by all three architectures](docs/images/compare-portal.png)
 
-*Example: "Famous lighthouses of Scotland". A finished in 19.6 s with 4 images, B in 31.5 s with 3 images, C in 6.1 s with no images. A SerpApi result that comes back in under 1.5 s is served from its 1-hour cache, so it's labeled "cached" and excluded from the "best" badge.*
+*Example: "Most beautiful libraries in the world". A finished in 20.8 s, 3 images, $0.12 (grounding $0.112); B in 39.6 s, 4 images, $0.084 (SerpApi $0.075); C in 8.7 s, 0 images, $0.015. A SerpApi result that comes back in under 1.5 s is served from its 1-hour cache, so it's labeled "cached" and excluded from the "best" badges.*
 
 *   **Live Metrics:** Measures client-side time-to-first-token (TTFT), total completion time, source count, and filled image figures using sandboxed `<iframe>` panels running in embed mode (`/?embed=1&arch=...`).
 *   **Decoupled & Isolated:** Panels communicate metrics back to the portal via `window.parent.postMessage({type: "prism-metrics", ...})`, preventing state collisions between concurrent streams.
@@ -96,6 +98,8 @@ Env var | Default | Meaning
 `IMAGE_PROVIDER` | `gemini` | Image search: `gemini` (Google image-search grounding), `serpapi` (Google Images via SerpApi), `brave`, `openverse` (keyless, CC only)
 `WEB_PROVIDER` | `gemini` | Answer grounding: `gemini` (Grounding with Google Search) or `serpapi` (Google web results passed to Gemini as context)
 `SERPAPI_API_KEY` | `""` | API key for SerpApi (enables Architecture B and C)
+`SERPAPI_COST_PER_SEARCH` | `0.015` | USD per SerpApi search used in cost estimates (Developer plan)
+`PRICING_JSON` | — | JSON overriding Gemini list prices, e.g. `{"gemini-3.8-flash": {"input": 1.5, "output": 7.5}}`
 `BRAVE_API_KEY` | `""` | API key for Brave search provider
 `SERPAPI_NO_CACHE` | `""` | Set to `1` to bypass SerpApi cache for fresh latency benchmarks
 `ENABLE_WIKIMEDIA` | `true` | Wikimedia Commons fallback when search yields no suitable image

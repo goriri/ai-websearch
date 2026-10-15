@@ -59,3 +59,18 @@ WEB_PROVIDER=serpapi IMAGE_PROVIDER=serpapi python -m scripts.cli_search "best b
 ```
 
 Select architecture C in the UI with the **AI Mode** toggle (shown when `SERPAPI_API_KEY` is set).
+
+## Cost per query (measured)
+
+Since the cost meter landed, every request reports measured usage × list prices: Gemini tokens (incl. thinking and image tokens), Gemini 3 Google Search grounding at $14 per 1,000 **search queries** (web and image search), and SerpApi at $0.015/search (Developer plan). Free tiers are ignored.
+
+| Architecture | Typical cost / query | Where the money goes |
+|---|---|---|
+| A. Gemini-native | $0.12–0.22 | ~90% grounding: the answer runs a few web queries and every image slot's image search runs ~2–3 queries (e.g. 15 queries = $0.21); all tokens ≈ $0.01 |
+| B. SerpApi + Gemini | ~$0.08 | ~5 SerpApi searches ($0.075) + Gemini tokens (~$0.009) |
+| C. SerpApi AI Mode | $0.015 | 1 SerpApi search, no Gemini |
+
+Ways to cut A's cost:
+- Fewer image slots (`MAX_IMAGE_SLOTS`).
+- Batch several slots into one image search.
+- The 5,000 free grounding queries a month cover roughly 300–400 queries.
