@@ -1,23 +1,28 @@
 # Demo recordings
 
-Real-time screen recordings of Prism. They were captured with headless Chrome
-by [`scripts/record_demo.py`](../scripts/record_demo.py) against a live
-deployment (Gemini on Vertex AI). Answers, sources and images come straight
-from the models and Google Search. Nothing is mocked.
+These are real-time screen recordings of Prism, captured with headless Chrome by
+[`scripts/record_demo.py`](../scripts/record_demo.py) against a live
+deployment (Gemini on Vertex AI, Google Search grounding, SerpApi). Answers,
+sources, images and costs come straight from the APIs; nothing is mocked.
 
 | Recording | What it shows |
 |---|---|
-| [search-mode.mp4](search-mode.mp4) ([GIF, 2x](search-mode.gif)) | Typing a query. The grounded answer streams in, image slots appear as shimmer cards and are filled with verified real web photos. Then citations, source cards, Google Search suggestions and related searches. |
-| [visual-mode.mp4](visual-mode.mp4) ([GIF, 2x](visual-mode.gif)) | Visual mode: Gemini's native interleaved output, with generated illustrations placed inline (each labeled "AI-generated"). |
-| [follow-up.mp4](follow-up.mp4) | A conversational follow-up ("Which of these can I visit in Europe…") that uses the previous answer as context. |
-| [image-query.mp4](image-query.mp4) | Multimodal input: attach a photo and ask "What is this building and can I go to the top?" |
-| [mobile.mp4](mobile.mp4) | Responsive layout on a phone-sized viewport, started from an example chip. |
+| [compare.mp4](compare.mp4) ([GIF, 2×](compare.gif)) | The **compare portal** (`/compare`): one query, "Most beautiful libraries in the world", answered side by side by A Gemini-native, B SerpApi + Gemini and C SerpApi AI Mode. Live metrics per panel: first text, full answer, images, sources and **measured cost**, with "best" badges. Result: A 20.8 s / 3 images / $0.121; B 39.6 s / 4 images / $0.084; C 8.7 s / 0 images / $0.015. |
+| [search-mode.mp4](search-mode.mp4) ([GIF, 2×](search-mode.gif)) | Search mode: the grounded answer streams with citations, and image slots fill with verified **real web photos** (generation is off). It ends with search suggestions, related questions and a cost chip (≈ $0.19). |
+| [image-query.mp4](image-query.mp4) | Multimodal input: a photo is attached with "What is this building and can I go to the top?" Prism identifies the Burj Khalifa and illustrates the answer with a real photo. |
+| [mobile.mp4](mobile.mp4) | The responsive phone layout (390×844), started from an example chip. |
+
+[`older/`](older/) holds recordings from the first version, kept for reference:
+Visual mode (Gemini-generated illustrations, now off by default via
+`ALLOW_IMAGE_GENERATION=false`) and a conversational follow-up.
 
 `assets/query-photo.jpg`, the photo used in the image-query demo, was
 generated with Gemini.
 
-Re-record (needs Chrome, ffmpeg and a running server):
+Re-record (needs Chrome, ffmpeg and a running server; `compare` needs
+`SERPAPI_API_KEY` and uses about 6 SerpApi searches):
 
 ```bash
-python -m scripts.record_demo --url http://localhost:8080/ --out demo --gif
+python -m scripts.record_demo --url http://localhost:8080/ --out demo \
+  --only compare search-mode image-query mobile --gif
 ```
