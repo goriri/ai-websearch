@@ -182,7 +182,7 @@ async def scenario_mobile(b, url):
   await smooth_scroll(b, speed=700)
 
 
-COMPARE_QUERY = "Most beautiful libraries in the world"
+COMPARE_QUERY = "Best places to see cherry blossoms in Japan"
 COMPARE_DONE = ("[...document.querySelectorAll('[data-metric=total]')]"
                 ".every(e => /\\d+(\\.\\d+)?s/.test(e.textContent))")
 FRAMES_FOLLOW = """(() => { for (const f of document.querySelectorAll('iframe.compare-frame')) {
@@ -227,7 +227,7 @@ SCENARIOS = {
     "follow-up": (scenario_followup, (1280, 800)),
     "image-query": (scenario_image_query, (1280, 800)),
     "mobile": (scenario_mobile, (390, 844)),
-    "compare": (scenario_compare, (1600, 900)),
+    "compare": (scenario_compare, (1920, 1080)),  # >= 1700 px: 4 panels side by side
 }
 
 
@@ -243,16 +243,20 @@ def encode(frames, out_mp4, gif=None, width=None):
   lines.append(f"file '{tmp / f'f{len(frames) - 1:05d}.jpg'}'")
   (tmp / "list.txt").write_text("\n".join(lines))
   vf = "fps=30,pad=ceil(iw/2)*2:ceil(ih/2)*2"
+  large = (width or 0) > 1000  # e.g. the 1920x1080 four-panel compare portal
   subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0",
                   "-i", str(tmp / "list.txt"), "-vf", vf, "-c:v", "libx264",
-                  "-preset", "slow", "-crf", "26", "-pix_fmt", "yuv420p",
+                  "-preset", "slow", "-crf", "30" if large else "26", "-pix_fmt", "yuv420p",
                   "-movflags", "+faststart", str(out_mp4)], check=True)
   if gif:
     w = width or 720
-    # 2x speed, palette-optimized GIF for embedding in README.
+    # Palette-optimized GIF preview for the README: 2x speed, or 3x speed with
+    # fewer frames/colors for large viewports to keep the file around 6 MB.
+    speed, fps, colors = ("0.33", 5, 64) if large else ("0.5", 10, 128)
     subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(out_mp4), "-vf",
-                    f"setpts=0.5*PTS,fps=10,scale={w}:-1:flags=lanczos,split[a][b];"
-                    "[a]palettegen=max_colors=128[p];[b][p]paletteuse=dither=bayer:bayer_scale=4",
+                    f"setpts={speed}*PTS,fps={fps},scale={w}:-1:flags=lanczos,split[a][b];"
+                    f"[a]palettegen=max_colors={colors}:stats_mode=diff[p];"
+                    "[b][p]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle",
                     str(gif)], check=True)
   shutil.rmtree(tmp)
 
@@ -294,7 +298,7 @@ async def record(name, url, out_dir, image_path, gif, port):
       out_dir.mkdir(parents=True, exist_ok=True)
       encode(b.frames, out_dir / f"{name}.mp4",
              gif=(out_dir / f"{name}.gif") if gif else None,
-             width=960 if w > 1400 else (720 if w > 600 else 320))
+             width=1152 if w > 1800 else (960 if w > 1400 else (720 if w > 600 else 320)))
   finally:
     proc.terminate()
     shutil.rmtree(prof, ignore_errors=True)

@@ -50,7 +50,7 @@ Prism includes an interactive comparison portal at `/compare` to evaluate all fo
 
 ![Compare portal: the same query answered by all three architectures](docs/images/compare-portal.png)
 
-*Example: "Iconic bridges of the world". A 16.1 s, 3 images, $0.135 (grounding $0.126); B 34.8 s, 1 image, $0.036; C 11.7 s, 1 image, $0.015; D 13.5 s, 4 images, $0.056 (Vertex AI Search $0.032). A SerpApi result that comes back in under 1.5 s is served from its 1-hour cache, so it's labeled "cached" and excluded from the "best" badges.*
+*Example: "Best places to see cherry blossoms in Japan" (all four panels on one 1920×1080 screen). A 47.4 s, 3 images, $0.120 (grounding $0.112); B 37.0 s, 2 images, $0.052; C 5.8 s, 0 images, $0.015; D 27.3 s, 4 images, $0.056 (Vertex AI Search $0.032). A SerpApi result that comes back in under 1.5 s is served from its 1-hour cache, so it's labeled "cached" and excluded from the "best" badges.*
 
 *   **Live Metrics:** Measures client-side time-to-first-token (TTFT), total completion time, source count, and filled image figures using sandboxed `<iframe>` panels running in embed mode (`/?embed=1&arch=...`).
 *   **Decoupled & Isolated:** Panels communicate metrics back to the portal via `window.parent.postMessage({type: "prism-metrics", ...})`, preventing state collisions between concurrent streams.

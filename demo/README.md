@@ -7,7 +7,7 @@ sources, images and costs come straight from the APIs; nothing is mocked.
 
 | Recording | What it shows |
 |---|---|
-| [compare.mp4](compare.mp4) ([GIF, 2×](compare.gif)) | The **compare portal** (`/compare`): one query, "Most beautiful libraries in the world", answered side by side by A Gemini-native, B SerpApi + Gemini and C SerpApi AI Mode. Live metrics per panel: first text, full answer, images, sources and **measured cost**, with "best" badges. Result: A 20.8 s / 3 images / $0.121; B 39.6 s / 4 images / $0.084; C 8.7 s / 0 images / $0.015. |
+| [compare.mp4](compare.mp4) ([GIF, 3×](compare.gif)) | The **compare portal** (`/compare`) at 1920×1080 with **all four architectures on one screen**: "Best places to see cherry blossoms in Japan" answered by A Gemini-native, B SerpApi + Gemini, C SerpApi AI Mode and D Gemini + Vertex AI Search images. Live metrics per panel: first text, full answer, images, sources and **measured cost**, with "best" badges. Result: A 47.4 s / 3 images / $0.120; B 37.0 s / 2 images / $0.052; C 5.8 s / 0 images / $0.015; D 27.3 s / **4 images** / $0.056. |
 | [search-mode.mp4](search-mode.mp4) ([GIF, 2×](search-mode.gif)) | Search mode: the grounded answer streams with citations, and image slots fill with verified **real web photos** (generation is off). It ends with search suggestions, related questions and a cost chip (≈ $0.19). |
 | [image-query.mp4](image-query.mp4) | Multimodal input: a photo is attached with "What is this building and can I go to the top?" Prism identifies the Burj Khalifa and illustrates the answer with a real photo. |
 | [mobile.mp4](mobile.mp4) | The responsive phone layout (390×844), started from an example chip. |
@@ -20,7 +20,7 @@ Visual mode (Gemini-generated illustrations, now off by default via
 generated with Gemini.
 
 Re-record (needs Chrome, ffmpeg and a running server; `compare` needs
-`SERPAPI_API_KEY` and uses about 6 SerpApi searches):
+`SERPAPI_API_KEY` (about 6 SerpApi searches) and `VERTEX_SEARCH_ENGINES` for panel D):
 
 ```bash
 python -m scripts.record_demo --url http://localhost:8080/ --out demo \
