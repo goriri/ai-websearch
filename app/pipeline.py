@@ -11,6 +11,8 @@ Two modes:
   Commons, then (optionally) Gemini image generation.
 * ``visual``: Gemini's native interleaved text+image output (a Gemini image
   model, also grounded with Google Search) generates illustrations inline.
+* ``aimode``: one SerpApi Google AI Mode call returns the answer, citations,
+  images and related questions; no Gemini calls (see ``aimode.py``).
 """
 
 import asyncio
@@ -27,7 +29,7 @@ import httpx
 import pydantic
 from google.genai import types
 
-from app import images, providers
+from app import aimode, images, providers
 from app.config import settings
 from app.genai_client import client
 from app.textproc import (
@@ -53,7 +55,7 @@ class Turn(pydantic.BaseModel):
 
 class SearchRequest(pydantic.BaseModel):
   query: str = pydantic.Field(min_length=1)
-  mode: Literal["search", "visual"] = "search"
+  mode: Literal["search", "visual", "aimode"] = "search"
   model: Literal["fast", "pro"] = "fast"
   images: Literal["auto", "web", "ai"] = "web"
   history: list[Turn] = pydantic.Field(default_factory=list, max_length=20)
@@ -472,3 +474,100 @@ async def run_visual(req: SearchRequest, emit: Emit) -> None:
       "questions": await related_questions(req.query, answer_md)
   })
   await emit("done", {"elapsed_ms": int((time.monotonic() - t0) * 1000)})
+
+
+AI_MODE_MODEL = "serpapi:google_ai_mode"
+# Google AI Mode inline images are small gstatic thumbnails (often < 240 px).
+AI_MODE_MIN_PX = 100
+_SLOT_TOKEN_RE = re.compile(r"\n\n@@SLOT:([\w-]+)@@\n\n")
+
+
+async def run_ai_mode(req: SearchRequest, emit: Emit) -> None:
+  """One SerpApi Google AI Mode call: answer, citations, images, related.
+
+  Makes no Gemini calls. The rendered markdown is streamed as `text` deltas
+  (one per paragraph) with a `slot` event at each image position, exactly as
+  the client assembles it for the other modes; slot images are downloaded
+  concurrently and sent as `image` / `image_failed` events.
+  """
+  image_tasks: list[asyncio.Task] = []
+  try:
+    await _run_ai_mode(req, emit, image_tasks)
+  finally:
+    for t in image_tasks:
+      if not t.done():
+        t.cancel()
+
+
+async def _run_ai_mode(
+    req: SearchRequest, emit: Emit, image_tasks: list[asyncio.Task]
+) -> None:
+  t0 = time.monotonic()
+
+  def elapsed() -> dict:
+    return {"elapsed_ms": int((time.monotonic() - t0) * 1000)}
+
+  await emit("status", {"stage": "search", "message": "Asking Google AI Mode"})
+  try:
+    resp = await providers.serpapi_ai_mode(req.query)
+  except (providers.ProviderError, httpx.HTTPError, ValueError) as e:
+    log.warning("AI Mode request failed: %s", e)
+    await emit("error", {"message": f"Google AI Mode failed: {e}"})
+    await emit("done", elapsed())
+    return
+  rendered = aimode.render(resp, max_images=settings.max_image_slots)
+  if not rendered.markdown.strip():
+    await emit("error", {"message": "Google AI Mode returned no answer."})
+    await emit("done", elapsed())
+    return
+
+  sem = asyncio.Semaphore(settings.image_concurrency)
+
+  async def fetch(slot: dict) -> None:
+    url = slot["image_url"]
+    host = urlparse(url).hostname or ""
+    cand = images.Candidate(
+        image_url=url, kind="web", domain=host, source_url=url
+    )
+    async with sem:
+      try:
+        got = await images.download(cand, min_px=AI_MODE_MIN_PX)
+      except (httpx.HTTPError, ValueError, OSError) as e:
+        log.warning("AI Mode image %s failed: %s", slot["id"], e)
+        got = None
+    if got is None:
+      await emit("image_failed", {"id": slot["id"]})
+      return
+    jpeg, w, h = got
+    img = images.ResolvedImage(
+        data_url=images.to_data_url(jpeg), width=w, height=h, kind="web",
+        source_url=cand.source_url, title="", domain=host,
+    )
+    await emit("image", {"id": slot["id"], "caption": slot["caption"]}
+               | img.to_event())
+
+  slots = {s["id"]: s for s in rendered.slots}
+  pieces = _SLOT_TOKEN_RE.split(rendered.markdown)
+  for i, piece in enumerate(pieces):
+    if i % 2:  # Slot id.
+      slot = slots.get(piece)
+      if slot is None:
+        continue
+      await emit("slot", {"id": piece, "query": "", "caption": slot["caption"]})
+      image_tasks.append(asyncio.create_task(fetch(slot)))
+      continue
+    for delta in re.split(r"(?<=\n\n)", piece):
+      if delta:
+        await emit("text", {"delta": delta})
+
+  await emit("final", {
+      "markdown": rendered.markdown,
+      "sources": rendered.sources,
+      "search_entry_point": "",
+      "queries": [req.query],
+      "model": AI_MODE_MODEL,
+  })
+  if image_tasks:
+    await asyncio.gather(*image_tasks, return_exceptions=True)
+  await emit("related", {"questions": rendered.related})
+  await emit("done", elapsed())

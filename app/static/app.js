@@ -35,11 +35,19 @@
     finishing: "Adding sources",
   };
 
+  const MODE_CHIPS = { search: "⌕ Search", visual: "✦ Visual", aimode: "◎ AI Mode" };
+  const FIGURE_WAIT = {
+    search: "Finding the best image…",
+    visual: "Generating illustration…",
+    aimode: "Loading image…",
+  };
+
   const state = {
     mode: "search",
     model: "fast",
     images: "web",
     imageGeneration: false, // from /api/config
+    aiMode: false, // from /api/config (server has a SerpApi key)
     attachment: null, // data URL
     history: [], // [{role, text}]
     busy: false,
@@ -97,7 +105,10 @@
     composer.querySelectorAll(".seg button").forEach((x) =>
       x.setAttribute("aria-checked", String(x.dataset.mode === mode))
     );
-    $("#imgPrefWrap", composer).hidden = mode === "visual";
+    // Image preference only applies to Search (and only when generation is on);
+    // AI Mode answers come from a single SerpApi call, so the model is fixed.
+    $("#imgPrefWrap", composer).hidden = mode !== "search" || !state.imageGeneration;
+    $("#modelSel", composer).closest("label").hidden = mode === "aimode";
   }
   $("#modelSel", composer).addEventListener("change", (e) => (state.model = e.target.value));
   $("#imgSel", composer).addEventListener("change", (e) => (state.images = e.target.value));
@@ -282,14 +293,18 @@
       const secs = ((d && d.elapsed_ms) || performance.now() - this.t0) / 1000;
       const nImg = [...this.slots.values()].filter((f) => f.classList.contains("ready")).length;
       this.metaEl.append(
-        el("span", { class: "chip", text: this.opts.mode === "visual" ? "✦ Visual" : "⌕ Search" }),
+        el("span", { class: "chip", text: MODE_CHIPS[this.opts.mode] || MODE_CHIPS.search }),
         this.sources.length ? el("span", { class: "chip", text: `${this.sources.length} sources` }) : null,
         nImg ? el("span", { class: "chip", text: `${nImg} images` }) : null,
         el("span", { class: "chip", text: `${secs.toFixed(1)}s` })
       );
       // Remove figures that never resolved.
       for (const f of this.slots.values()) if (!f.classList.contains("ready")) f.classList.add("failed");
-      if (this.model) this.footerEl.textContent = `Answer by ${this.model} on Gemini Enterprise Agent Platform (Vertex AI)`;
+      if (this.model) {
+        this.footerEl.textContent = this.model.startsWith("serpapi:")
+          ? "Answer by Google AI Mode (via SerpApi)"
+          : `Answer by ${this.model} on Gemini Enterprise Agent Platform (Vertex AI)`;
+      }
     }
 
     plainText() {
@@ -345,7 +360,7 @@
       const img = el("img", { alt: d.caption || "", decoding: "async" });
       const bg = el("div", { class: "bgblur" });
       const finding = el("div", { class: "finding" },
-        el("div", {}, this.opts.mode === "visual" ? "Generating illustration…" : "Finding the best image…",
+        el("div", {}, FIGURE_WAIT[this.opts.mode] || FIGURE_WAIT.search,
           d.query ? el("b", { text: `“${d.query}”` }) : null));
       const frame = el("div", { class: "frame" }, bg, img, el("div", { class: "shimmer" }), finding);
       const cap = el("figcaption", {}, d.caption ? el("span", { class: "cap", text: d.caption }) : null);
@@ -488,7 +503,7 @@
     const first = document.body.classList.contains("landing");
     document.body.classList.remove("landing");
     mountComposer();
-    if (first) history.replaceState(null, "", `?q=${encodeURIComponent(query)}${state.mode === "visual" ? "&mode=visual" : ""}`);
+    if (first) history.replaceState(null, "", `?q=${encodeURIComponent(query)}${state.mode !== "search" ? `&mode=${state.mode}` : ""}`);
 
     const turn = new Turn(query, opts);
     state.turns.push(turn);
@@ -527,15 +542,20 @@
   }
 
   // When the server disables image generation (cost control), hide Visual
-  // mode and the image-source choices that would generate images.
+  // mode and the image-source choices that would generate images. AI Mode is
+  // offered only when the server has a SerpApi key. The mode switch stays
+  // visible whenever there is more than one mode to choose from.
   function applyServerConfig(cfg) {
     state.imageGeneration = !!cfg.image_generation;
-    if (state.imageGeneration) return;
+    state.aiMode = !!cfg.ai_mode;
+    const seg = composer.querySelector(".seg");
+    if (!state.aiMode) seg.querySelector('button[data-mode="aimode"]')?.remove();
+    if (!state.imageGeneration) {
+      seg.querySelector('button[data-mode="visual"]')?.remove();
+      state.images = "web";
+    }
+    seg.hidden = seg.querySelectorAll("button").length < 2;
     setMode("search");
-    composer.querySelector('.seg button[data-mode="visual"]').remove();
-    composer.querySelector(".seg").hidden = true;
-    $("#imgPrefWrap", composer).hidden = true;
-    state.images = "web";
   }
 
   // ------------------------------------------------------------------ Boot
@@ -545,10 +565,11 @@
     try {
       applyServerConfig(await (await fetch("/api/config")).json());
     } catch (_) {
-      applyServerConfig({ image_generation: false });
+      applyServerConfig({ image_generation: false, ai_mode: false });
     }
     const params = new URLSearchParams(location.search);
     if (params.get("mode") === "visual" && state.imageGeneration) setMode("visual");
+    if (params.get("mode") === "aimode" && state.aiMode) setMode("aimode");
     if (params.get("q")) runSearch(params.get("q"));
     else q.focus();
   })();

@@ -69,6 +69,7 @@ async def config():
       "image_model": settings.image_model,
       "lite_model": settings.lite_model,
       "image_generation": settings.allow_image_generation,
+      "ai_mode": bool(settings.serpapi_api_key),
   }
 
 
@@ -83,6 +84,8 @@ async def search(req: pipeline.SearchRequest, request: fastapi.Request):
   if req.mode == "visual" and not settings.allow_image_generation:
     raise fastapi.HTTPException(
         400, "Visual mode is disabled (image generation is turned off).")
+  if req.mode == "aimode" and not settings.serpapi_api_key:
+    raise fastapi.HTTPException(400, "AI Mode needs SERPAPI_API_KEY")
   if _rate_limited(_client_ip(request)):
     raise fastapi.HTTPException(429, "Too many searches, please wait a minute.")
   try:
@@ -95,7 +98,8 @@ async def search(req: pipeline.SearchRequest, request: fastapi.Request):
   async def emit(event: str, data: dict) -> None:
     await queue.put(_sse(event, data))
 
-  runner = pipeline.run_visual if req.mode == "visual" else pipeline.run_search
+  runners = {"visual": pipeline.run_visual, "aimode": pipeline.run_ai_mode}
+  runner = runners.get(req.mode, pipeline.run_search)
   log.info("search mode=%s model=%s images=%s q=%r", req.mode, req.model,
            req.images, req.query[:200])
 

@@ -93,11 +93,21 @@ def _is_wikimedia(url: str) -> bool:
 # --------------------------------------------------------------------------
 
 
-def normalize_image(raw: bytes, max_px: int) -> tuple[bytes, int, int]:
+def normalize_image(
+    raw: bytes, max_px: int, min_px: Optional[int] = None
+) -> tuple[bytes, int, int]:
   """Decodes any common format, downsizes and re-encodes as JPEG.
+
+  Args:
+    raw: Encoded image bytes.
+    max_px: Maximum width/height of the output.
+    min_px: Optional minimum width and height. Defaults to the standard
+      minimum (240x160); small thumbnails (e.g. Google AI Mode) pass a lower
+      value.
 
   Returns (jpeg_bytes, width, height). Raises ValueError if unusable.
   """
+  min_w, min_h = (_MIN_W, _MIN_H) if min_px is None else (min_px, min_px)
   try:
     img = Image.open(io.BytesIO(raw))
     img.load()
@@ -106,7 +116,7 @@ def normalize_image(raw: bytes, max_px: int) -> tuple[bytes, int, int]:
   if getattr(img, "is_animated", False):
     img.seek(0)
   w, h = img.size
-  if w < _MIN_W or h < _MIN_H:
+  if w < min_w or h < min_h:
     raise ValueError(f"too small: {w}x{h}")
   if w / h > 4 or h / w > 4:
     raise ValueError(f"extreme aspect ratio: {w}x{h}")
@@ -127,7 +137,10 @@ def to_data_url(jpeg: bytes) -> str:
   return "data:image/jpeg;base64," + base64.b64encode(jpeg).decode()
 
 
-async def download(cand: Candidate) -> Optional[tuple[bytes, int, int]]:
+async def download(
+    cand: Candidate, min_px: Optional[int] = None
+) -> Optional[tuple[bytes, int, int]]:
+  """Downloads and normalizes a candidate image (see `normalize_image`)."""
   headers = {}
   if _is_wikimedia(cand.image_url):
     headers["User-Agent"] = settings.wikimedia_user_agent
@@ -148,7 +161,10 @@ async def download(cand: Candidate) -> Optional[tuple[bytes, int, int]]:
           return None
       # Record the final (post-redirect) URL for display.
       cand.image_url = str(resp.url)
-    return await asyncio.to_thread(normalize_image, bytes(buf), settings.image_max_px)
+    kw = {} if min_px is None else {"min_px": min_px}
+    return await asyncio.to_thread(
+        normalize_image, bytes(buf), settings.image_max_px, **kw
+    )
   except (httpx.HTTPError, ValueError) as e:
     log.info("image download failed %s: %s", cand.image_url[:80], e)
     return None

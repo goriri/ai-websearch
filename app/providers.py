@@ -11,6 +11,8 @@ Providers:
           openverse (keyless, CC-licensed images only)
   web:    gemini (default, Grounding with Google Search) | serpapi (Google web
           results via SerpApi)
+  answer: serpapi_ai_mode / serpapi_ai_overview return a complete Google AI
+          Mode / AI Overview answer (used by the "aimode" architecture)
 """
 
 import logging
@@ -177,3 +179,67 @@ async def serpapi_web(query: str, limit: int = 8) -> list[dict]:
 
 
 WEB_PROVIDERS = {"serpapi": serpapi_web}
+
+
+# --------------------------------------------------------------------------
+# Google AI Mode / AI Overview (complete answers, used by mode="aimode")
+# --------------------------------------------------------------------------
+
+_SERPAPI_URL = "https://serpapi.com/search.json"
+# AI Mode answers are generated on demand and can take much longer than a
+# plain results page.
+_AI_TIMEOUT = httpx.Timeout(30.0, connect=4.0)
+
+
+async def _serpapi_json(params: dict) -> dict:
+  """Calls SerpApi and returns the JSON body.
+
+  Raises:
+    ProviderError: if the key is missing, the body carries an `error`, or the
+      body is not a JSON object.
+    httpx.HTTPError: on transport / HTTP status errors without an error body.
+  """
+  key = _require(settings.serpapi_api_key, "SerpApi")
+  r = await api_http().get(
+      _SERPAPI_URL, params=params | {"api_key": key}, timeout=_AI_TIMEOUT
+  )
+  try:
+    data = r.json()
+  except ValueError:
+    data = None
+  # SerpApi reports failures (including non-2xx ones) as {"error": "..."}.
+  if isinstance(data, dict) and data.get("error"):
+    raise ProviderError(str(data["error"]))
+  r.raise_for_status()
+  if not isinstance(data, dict):
+    raise ProviderError("SerpApi returned an invalid response")
+  return data
+
+
+async def serpapi_ai_mode(query: str) -> dict:
+  """Google AI Mode answer via SerpApi (engine=google_ai_mode).
+
+  Returns the raw response: text_blocks, references, inline_images,
+  related_questions, reconstructed_markdown, ...
+  """
+  return await _serpapi_json(
+      {"engine": "google_ai_mode", "q": query, "hl": "en"}
+  )
+
+
+async def serpapi_ai_overview(query: str) -> dict:
+  """Google AI Overview via SerpApi (engine=google -> `ai_overview`).
+
+  If the results page only carries a `page_token`, the overview is fetched
+  with engine=google_ai_overview (the token expires after ~60 s, so this is
+  done immediately). Returns {} when Google showed no AI Overview.
+  """
+  data = await _serpapi_json({"engine": "google", "q": query, "hl": "en"})
+  overview = data.get("ai_overview") or {}
+  token = overview.get("page_token")
+  if token and not overview.get("text_blocks"):
+    data = await _serpapi_json(
+        {"engine": "google_ai_overview", "page_token": token}
+    )
+    overview = data.get("ai_overview") or {}
+  return overview
