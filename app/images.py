@@ -234,9 +234,11 @@ async def google_image_search(query: str, context: str) -> list[Candidate]:
   return []
 
 
-async def search_images(query: str, context: str) -> list[Candidate]:
+async def search_images(
+    query: str, context: str, provider: Optional[str] = None
+) -> list[Candidate]:
   """Dispatches to the configured image provider (IMAGE_PROVIDER)."""
-  name = settings.image_provider
+  name = provider or settings.image_provider
   if name == "gemini":
     return await google_image_search(query, context)
   from app import providers  # Local import avoids a cycle.
@@ -449,6 +451,7 @@ async def _first_valid(
 async def resolve_slot(
     query: str, caption: str, context: str, preference: str = "auto",
     exclude_urls: Optional[set[str]] = None,
+    provider: Optional[str] = None,
 ) -> Optional[ResolvedImage]:
   """Finds the best image for a slot according to the user's preference.
 
@@ -463,7 +466,7 @@ async def resolve_slot(
 
   exclude = exclude_urls if exclude_urls is not None else set()
   img = None
-  web = await search_images(query, context)
+  web = await search_images(query, context, provider=provider)
   if web:
     img = await _first_valid(web, caption, query, exclude)
   if img is None:

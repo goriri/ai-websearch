@@ -346,3 +346,19 @@ body:not(.landing) .hero { display: none; }
   .answer { font-size: 16px; }
   .src-card { flex-basis: 168px; }
 }
+
+/* ---------- Embed mode (used by /compare) ---------- */
+body.embed .topbar,
+body.embed .hero,
+body.embed .dock {
+  display: none !important;
+}
+body.embed {
+  min-height: 100vh;
+}
+body.embed .thread {
+  padding: 10px 14px 24px;
+}
+body.embed .turn {
+  padding: 8px 0 16px;
+}

@@ -38,12 +38,20 @@ All numbers are from live runs on 2026-10-15, using the SerpApi free plan and Ge
 ## Conclusions
 
 1. **AI Mode via SerpApi is not a better architecture for this product.** It is the fastest and simplest path to *a* cited text answer, but it **doesn't deliver images** in practice, which is the core requirement. It also gives no control over format or length, and is a third-party scraping dependency. A hybrid (AI Mode text plus Prism image slots) would also lose here: AI Mode writes no image slots, so the images would have to be guessed, and its short answers leave few places for them.
-2. **B (SerpApi search plus Gemini writing) works.** Quality matches A (84% vs 83% relevant images), with slightly faster first text and more sources. But it is about 60% slower end to end (33 s vs 20.5 s), because SerpApi image search is slow and unpredictable. It also needs a second vendor plus legal review, and costs about 5 SerpApi searches per query (\$0.05–0.125 per query on paid plans).
+2. **B (SerpApi search plus Gemini writing) works.** Quality matches A (84% vs 83% relevant images), with slightly faster first text and more sources. But it is about 60% slower end to end (33 s vs 20.5 s), because SerpApi image search is slow and unpredictable. It also needs a second vendor plus legal review, and costs about 5 SerpApi searches per query ($0.05–0.125 per query on paid plans).
 3. **A (Gemini-native) remains the best default:** fastest full result, most images per query, equal quality, and one first-party bill and set of terms.
 
 **Where SerpApi still makes sense:** as a *web context* provider (`WEB_PROVIDER=serpapi`) when you want more or specific sources or a non-Gemini search backend. Keep `IMAGE_PROVIDER=gemini` for speed. Every combination is now a config switch.
 
-## Reproduce
+## How to try it
+
+You can compare all three architectures side-by-side in real time using the **Compare portal**:
+
+1. Start the server locally with `SERPAPI_API_KEY` set (required for Architectures B and C).
+2. Open `/compare` in your browser (or click the **Compare** button in the top navigation bar).
+3. Type any search query to observe live client-side latency (time to first token, full answer time), source counts, and filled image figures across all three architectures simultaneously.
+
+## Reproduce from CLI
 
 ```bash
 export GOOGLE_CLOUD_PROJECT=<project> SERPAPI_API_KEY=<key> SERPAPI_NO_CACHE=1

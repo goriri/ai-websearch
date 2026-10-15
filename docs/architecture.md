@@ -5,9 +5,11 @@ answer where text and images are interleaved.
 
 *   [System overview](#system-overview)
 *   [Components](#components)
+*   [Three architectures and per-request selection](#three-architectures-and-per-request-selection)
 *   [Request lifecycle](#request-lifecycle)
 *   [Image slot resolution](#image-slot-resolution)
 *   [Visual mode](#visual-mode)
+*   [Compare portal](#compare-portal)
 *   [Streaming protocol (SSE)](#streaming-protocol-sse)
 *   [Front-end rendering model](#front-end-rendering-model)
 *   [Deployment](#deployment)
@@ -20,12 +22,15 @@ answer where text and images are interleaved.
 flowchart LR
   subgraph Browser
     UI["index.html + app.js<br/>marked + DOMPurify"]
+    COMPARE["compare.html + compare.js<br/>3-panel test harness"]
   end
   subgraph CloudRun["Cloud Run: prism-search (FastAPI)"]
     API["/api/search<br/>SSE endpoint"]
     PIPE["pipeline.py<br/>orchestration"]
     IMG["images.py<br/>slot resolver"]
     TXT["textproc.py<br/>slot parser + citations"]
+    PROV["providers.py<br/>search backends"]
+    AIM["aimode.py<br/>AI Mode parser"]
   end
   subgraph Vertex["Gemini on Vertex AI (global endpoint)"]
     ANS["gemini-3.8-flash / gemini-3.1-pro-preview<br/>+ Google Search grounding"]
@@ -34,11 +39,16 @@ flowchart LR
   end
   WEB[("Web image hosts")]
   WIKI[("Wikimedia Commons API")]
+  SERP[("SerpApi (optional)")]
 
   UI -- "POST JSON, read SSE" --> API --> PIPE
+  COMPARE -- "embed iframes" --> UI
   PIPE <--> TXT
   PIPE -- "streamGenerateContent" --> ANS
+  PIPE --> PROV
+  PIPE --> AIM
   PIPE --> IMG
+  PROV -. "web / image search" .-> SERP
   IMG -- "generateContent + image_search" --> IMGM
   IMG -- "download candidates" --> WEB
   IMG -- "candidates + caption" --> LITE
@@ -46,7 +56,7 @@ flowchart LR
   IMG -. "fallback" .-> IMGM
 ```
 
-Everything that needs intelligence runs on Gemini: understanding the question,
+Everything that needs intelligence runs on Gemini by default: understanding the question,
 web research, writing, picking images, judging them visually, and generating
 images. The server is a thin, fully async orchestrator.
 
@@ -54,13 +64,52 @@ images. The server is a thin, fully async orchestrator.
 
 Module                | Responsibility
 --------------------- | --------------------------------------------------------
-`app/main.py`         | FastAPI app, static files, `/api/search` SSE endpoint, request validation, per-IP rate limit, keep-alives, cancellation when the client disconnects
-`app/pipeline.py`     | The two modes (`run_search`, `run_visual`), prompts, model fallback, grounding metadata → sources, citations, search suggestions, related questions
-`app/images.py`       | Candidate retrieval (Gemini image search, Wikimedia), download and validation, Pillow normalization, visual re-ranking, generation, cross-slot dedupe
+`app/main.py`         | FastAPI app, static files, `/api/search` SSE endpoint, `/compare` portal route, request validation, per-IP rate limit, keep-alives, client disconnect cancellation
+`app/pipeline.py`     | Search and Visual orchestration (`run_search`, `run_visual`, `run_ai_mode`), prompts, model fallback, grounding metadata → sources, citations, search suggestions, related questions
+`app/images.py`       | Candidate retrieval (Gemini image search, Wikimedia, third-party providers), download and validation, Pillow normalization, visual re-ranking, generation, cross-slot dedupe
+`app/providers.py`    | Search provider registry and API clients (SerpApi Google Web/Images, Brave, Openverse)
+`app/aimode.py`       | Pure parser converting SerpApi Google AI Mode structured responses (`text_blocks`, `references`, `inline_images`) into Markdown with citations and slot markers
 `app/textproc.py`     | Pure functions: incremental `[[IMAGE: …]]` parser, citation insertion, title cleanup
 `app/genai_client.py` | Single shared `google-genai` client (`vertexai=True`, retries)
 `app/config.py`       | All tunables via environment variables
-`app/static/`         | Dependency-free front end (vendored `marked` and `DOMPurify`)
+`app/static/`         | Front end: `index.html`, `app.js`, `styles.css`, `compare.html`, `compare.js`, and vendored `marked` + `DOMPurify`
+
+## Three architectures and per-request selection
+
+Prism supports three distinct architectural configurations for generating grounded answers with interleaved media:
+
+1. **Architecture A: Gemini-native (default).**
+   - **Answer text:** `gemini-3.8-flash` (or Pro) with Vertex AI Grounding with Google Search, streamed via SSE.
+   - **Images:** Concurrently resolved per section slot using `gemini-3.1-flash-image` Google image search grounding, followed by visual re-ranking via `gemini-3.1-flash-lite`.
+   - **Infrastructure:** Pure first-party Google Cloud (Vertex AI). No external API keys or third-party service dependencies required.
+2. **Architecture B: Third-party search (SerpApi + Gemini).**
+   - **Answer text:** Google web search results fetched via SerpApi (`engine=google`), supplied to `gemini-3.8-flash` as context. Gemini streams the response and writes numerical citations `[n]`.
+   - **Images:** Resolved per slot via SerpApi Google Images (`engine=google_images`), feeding into the same download, normalization, and visual re-ranking pipeline.
+   - **Infrastructure:** Requires `SERPAPI_API_KEY`.
+3. **Architecture C: SerpApi Google AI Mode (`aimode`).**
+   - **Answer & Images:** A single request to SerpApi Google AI Mode (`engine=google_ai_mode`). The structured response is parsed by `app/aimode.py`, which maps text blocks to citations and places thumbnail/inline image slots.
+   - **Infrastructure:** Arrives all at once (non-streaming). Requires `SERPAPI_API_KEY`.
+
+### Per-request selection
+
+The request payload accepts an optional `arch` parameter (`"gemini"` | `"thirdparty"` | `"aimode"`). When provided, `arch` overrides server-wide defaults (`WEB_PROVIDER` and `IMAGE_PROVIDER`) for that specific search request without mutating global process settings. This enables concurrent evaluation across different architectures in the comparison portal.
+
+```mermaid
+flowchart TD
+  Req["POST /api/search<br/>{query, arch: 'gemini' | 'thirdparty' | 'aimode'}"] --> Choice{arch}
+
+  Choice -- "gemini (default)" --> A1["gemini-3.8-flash<br/>+ Google Search grounding"]
+  A1 -- "Streamed Markdown + slots" --> A2["Per-slot: gemini-3.1-flash-image<br/>(Google image search grounding)"]
+  A2 --> V["Visual Re-rank<br/>(gemini-3.1-flash-lite)"]
+
+  Choice -- "thirdparty" --> B1["SerpApi Google Web Search<br/>(engine=google)"]
+  B1 -- "Top results as context" --> B2["gemini-3.8-flash<br/>(Streamed text + [n] cites + slots)"]
+  B2 --> B3["Per-slot: SerpApi Google Images<br/>(engine=google_images)"]
+  B3 --> V
+
+  Choice -- "aimode" --> C1["SerpApi Google AI Mode<br/>(engine=google_ai_mode)"]
+  C1 -- "text_blocks + references + inline_images" --> C2["aimode.py<br/>Reconstruct Markdown, cites & slots"]
+```
 
 ## Request lifecycle
 
@@ -73,7 +122,7 @@ sequenceDiagram
   participant I as Image resolver<br/>(per slot, concurrent)
   participant L as gemini-3.1-flash-lite
 
-  B->>S: POST /api/search {query, mode, history, image?}
+  B->>S: POST /api/search {query, mode, history, image?, arch?}
   S-->>B: event: status "Searching the web"
   S->>A: generate_content_stream(system prompt, history, query)
   loop streamed chunks
@@ -193,6 +242,9 @@ Gemini's `google_search` tool takes `search_types` with `web_search` and
     one call both write the answer and place retrieved images, Prism runs one
     targeted search per slot and verifies the candidates visually.
 
+> [!NOTE]
+> For full technical details, benchmark numbers, token-cap mechanics, and standalone code recipes, see [Image Search Grounding in Gemini](image-search-grounding.md).
+
 ### Visual re-ranking
 
 Candidate images are downscaled to 384 px and sent to `gemini-3.1-flash-lite`,
@@ -235,6 +287,69 @@ sequenceDiagram
 Here Gemini produces the interleaving natively: it decides where each picture
 goes and generates it, so text and images arrive in their final order.
 
+## Compare portal
+
+Prism provides an interactive side-by-side comparison portal at `/compare`. It benchmarks the three architectures on identical queries under identical network conditions:
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor User
+  participant CP as Compare Portal (/compare)
+  participant IF_A as iframe (arch=gemini)
+  participant IF_B as iframe (arch=thirdparty)
+  participant IF_C as iframe (arch=aimode)
+  participant S as FastAPI Server
+
+  User->>CP: Enter query & click Compare
+  CP->>IF_A: Load /?embed=1&arch=gemini&q=...
+  CP->>IF_B: Load /?embed=1&arch=thirdparty&q=...
+  CP->>IF_C: Load /?embed=1&arch=aimode&q=...
+
+  par Concurrently execute architectures
+    IF_A->>S: POST /api/search {query, arch: "gemini"}
+    S-->>IF_A: SSE stream
+    IF_A->>CP: postMessage({type: "prism-metrics", phase: "ttft", ...})
+    IF_A->>CP: postMessage({type: "prism-metrics", phase: "done", ...})
+  and
+    IF_B->>S: POST /api/search {query, arch: "thirdparty"}
+    S-->>IF_B: SSE stream
+    IF_B->>CP: postMessage({type: "prism-metrics", phase: "ttft", ...})
+    IF_B->>CP: postMessage({type: "prism-metrics", phase: "done", ...})
+  and
+    IF_C->>S: POST /api/search {query, arch: "aimode"}
+    S-->>IF_C: SSE stream
+    IF_C->>CP: postMessage({type: "prism-metrics", phase: "done", ...})
+  end
+
+  CP->>User: Update live metric cards & highlight fastest / most images
+```
+
+### Embed mode and postMessage metrics
+
+1. **Isolation:** The portal embeds three sandboxed `<iframe>` elements loading `/?embed=1&arch=<arch>&q=<query>`. Using iframes isolates CSS styling, DOM state, and EventSource connections, reusing the production search UI directly without code duplication.
+2. **Embed layout:** When loaded with `embed=1`, `app.js` adds a `.embed` class to `<body>`, suppressing the top navigation bar, hero banner, and follow-up composer.
+3. **Metric collection:** The child frame tracks execution timestamps client-side:
+   - `t0`: Query initiation timestamp.
+   - `ttft_ms`: Milliseconds elapsed until the first streamed `text` event arrives.
+   - `total_ms`: Milliseconds elapsed until the stream emits `done`.
+   - Content stats: Total rendered images, cited source count, and character length.
+4. **PostMessage protocol:** As events occur, the child frame dispatches events to the parent:
+   ```javascript
+   window.parent.postMessage({
+     type: "prism-metrics",
+     arch: "gemini", // "gemini" | "thirdparty" | "aimode"
+     phase: "ttft",  // "ttft" | "done" | "error"
+     ttft_ms: 4800,
+     total_ms: 20500,
+     images: 3,
+     sources: 5,
+     chars: 3813
+   }, "*");
+   ```
+5. **Real-time feedback:** The parent portal updates live metric badges per column. When all active architectures complete, it automatically awards "best" highlights to the panel with the fastest completion time and the most relevant images.
+6. **Key requirements:** If `SERPAPI_API_KEY` is not present in `/api/config`, columns B and C render a disabled placeholder informing the user that the key is required.
+
 ## Streaming protocol (SSE)
 
 `POST /api/search` with a JSON body:
@@ -245,6 +360,7 @@ goes and generates it, so text and images arrive in their final order.
   "mode": "search",            // or "visual"
   "model": "fast",             // or "pro"
   "images": "auto",            // "auto" | "web" | "ai"
+  "arch": "gemini",            // optional override: "gemini" | "thirdparty" | "aimode"
   "history": [{"role": "user", "text": "..."}, {"role": "model", "text": "..."}],
   "image": "data:image/jpeg;base64,..."   // optional query image
 }
@@ -299,23 +415,23 @@ flowchart LR
   User["User (browser)"] -- "HTTPS" --> IAP["Identity-Aware Proxy<br/>(Google sign-in, allow-list)"]
   IAP -- "run.invoker" --> CR["Cloud Run: prism-search<br/>2 vCPU, 1 GiB, concurrency 20,<br/>max 5 instances, timeout 300 s"]
   CR -- "runtime SA: aiplatform.user" --> VX["Vertex AI Gemini (global)"]
-  CR -- "egress" --> Hosts["image hosts / Wikimedia"]
+  CR -- "egress" --> Hosts["image hosts / Wikimedia / SerpApi"]
   CB["Cloud Build (gcloud run deploy --source)"] --> AR["Artifact Registry image"] --> CR
 ```
 
 *   The container is `python:3.13-slim` running uvicorn as a non-root user. The
     app is stateless, so it scales horizontally.
 *   Auth uses the runtime service account through Application Default
-    Credentials. There are no API keys in the code or configuration.
+    Credentials. Vertex AI access requires no API keys in the code or configuration.
 
 ## Security and safety
 
-*   **No secrets.** Vertex AI access comes from ADC or the Cloud Run service
-    account.
+*   **No hardcoded secrets.** Vertex AI access comes from ADC or the Cloud Run service
+    account. Optional third-party API keys (`SERPAPI_API_KEY`, `BRAVE_API_KEY`) are passed via environment variables or Secret Manager.
 *   **Access control.** Deploy behind IAP or `--no-allow-unauthenticated`.
     There is also a per-instance, per-IP rate limit (`RATE_LIMIT_PER_MIN`).
 *   **No SSRF from user input.** The server only fetches URLs that come from
-    Gemini grounding metadata or the Wikimedia API, never URLs typed by the
+    Gemini grounding metadata, SerpApi, or the Wikimedia API, never URLs typed by the
     user. Downloads are capped (12 MB, timeouts), restricted to `image/*`, and
     exclude SVG.
 *   **Decompression bombs.** `Image.MAX_IMAGE_PIXELS` is capped, and images are

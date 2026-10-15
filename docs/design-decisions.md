@@ -113,3 +113,28 @@ and a per-IP rate limit.
 
 **Why.** Every search spends model and grounding quota, so a public,
 unauthenticated endpoint would be an open cost risk.
+
+## 11. Pluggable search providers
+
+**Decision.** Abstract web grounding and image retrieval behind pluggable provider interfaces (`WEB_PROVIDER` and `IMAGE_PROVIDER` in `app/providers.py`), defaulting to Gemini grounding (`gemini`) while supporting SerpApi (Google Web & Images), Brave, and Openverse.
+
+**Why.** While Gemini-native search is the best default, decoupling search retrieval allows benchmarking alternative backends, integrating third-party search APIs when specific non-Gemini web sources are preferred, and testing keyless open providers (Openverse) without altering core streaming or slot-rendering logic.
+
+## 12. SerpApi AI Mode evaluated and not adopted
+
+**Decision.** Evaluate SerpApi Google AI Mode (`engine=google_ai_mode`) as an alternative architecture, support it as an experimental option (`arch="aimode"`), but retain Architecture A (Gemini-native) as the default.
+
+**Why.** Live benchmark measurements demonstrate that SerpApi AI Mode does not satisfy Prism's core requirements:
+* **Image scarcity:** Across 8 visual test queries, AI Mode returned images for only one query (a single thumbnail that subsequently failed to download), yielding only 0.1 images/query compared to 2.9 for Gemini-native.
+* **Latency and streaming:** While the full answer arrives in 8.5 s, it arrives all at once without streaming, making time-to-first-token worse than Gemini-native (4.8 s) or SerpApi + Gemini (4.3 s).
+* **Content depth:** Answers are roughly 3× shorter (1,272 characters vs 3,813 characters) and provide no mechanism for inserting contextual image slots into relevant sections.
+* **Vendor complexity:** Introduces third-party scraping dependencies and per-query API costs without quality benefits.
+
+## 13. Compare portal via iframes and postMessage
+
+**Decision.** Build the multi-architecture comparison portal (`/compare`) by embedding three sandboxed `<iframe>` panels running embed mode (`/?embed=1&arch=...`), communicating client-side performance metrics back to the parent window using `postMessage`.
+
+**Why.**
+* **Code reuse:** Directly reuses the production search interface, Markdown renderer, and SSE handling without duplicating front-end logic.
+* **Isolation:** Iframes isolate DOM trees, styles, and simultaneous SSE streams, preventing race conditions or stream multiplexing bugs.
+* **Accurate client metrics:** Measures true end-to-end client-observed user experience (TTFT upon first text event, total duration upon `done`, image count) and relays them via structured `prism-metrics` messages to drive the live scoreboard.

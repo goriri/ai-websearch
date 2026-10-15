@@ -56,6 +56,7 @@ class Turn(pydantic.BaseModel):
 class SearchRequest(pydantic.BaseModel):
   query: str = pydantic.Field(min_length=1)
   mode: Literal["search", "visual", "aimode"] = "search"
+  arch: Optional[Literal["gemini", "thirdparty", "aimode"]] = None
   model: Literal["fast", "pro"] = "fast"
   images: Literal["auto", "web", "ai"] = "web"
   history: list[Turn] = pydantic.Field(default_factory=list, max_length=20)
@@ -292,14 +293,17 @@ async def _run_search(
 
   await emit("status", {"stage": "search", "message": "Searching the web"})
 
+  web = "serpapi" if req.arch == "thirdparty" else ("gemini" if req.arch == "gemini" else settings.web_provider)
+  image_provider = "serpapi" if req.arch == "thirdparty" else ("gemini" if req.arch == "gemini" else settings.image_provider)
+
   # Third-party web search (WEB_PROVIDER=serpapi): fetch results first and pass
   # them to Gemini as context instead of using the Google Search tool.
   tp_results: Optional[list[dict]] = None
-  if settings.web_provider in providers.WEB_PROVIDERS:
+  if web in providers.WEB_PROVIDERS:
     try:
-      tp_results = await providers.WEB_PROVIDERS[settings.web_provider](req.query)
+      tp_results = await providers.WEB_PROVIDERS[web](req.query)
     except Exception as e:  # pylint: disable=broad-except
-      log.warning("%s web search failed (%s); using Gemini grounding", settings.web_provider, e)
+      log.warning("%s web search failed (%s); using Gemini grounding", web, e)
   if tp_results:
     sysprompt = sysprompt.replace(
         "Research the user's request with Google Search, then write",
@@ -318,7 +322,8 @@ async def _run_search(
     async with sem:
       try:
         img = await images.resolve_slot(
-            slot.query, slot.caption, req.query, req.images, used_images
+            slot.query, slot.caption, req.query, req.images, used_images,
+            provider=image_provider,
         )
       except Exception:  # pylint: disable=broad-except
         log.exception("slot %s failed", slot_id)

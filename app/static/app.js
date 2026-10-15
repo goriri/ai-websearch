@@ -36,6 +36,7 @@
   };
 
   const MODE_CHIPS = { search: "⌕ Search", visual: "✦ Visual", aimode: "◎ AI Mode" };
+  const ARCH_CHIPS = { gemini: "A · Gemini-native", thirdparty: "B · SerpApi + Gemini", aimode: "C · SerpApi AI Mode" };
   const FIGURE_WAIT = {
     search: "Finding the best image…",
     visual: "Generating illustration…",
@@ -44,6 +45,8 @@
 
   const state = {
     mode: "search",
+    arch: null,
+    embed: false,
     model: "fast",
     images: "web",
     imageGeneration: false, // from /api/config
@@ -184,10 +187,34 @@
     clearAttachment();
     mountComposer();
     autosize();
+    updateCompareHref();
     q.focus();
   }
   $("#homeBtn").addEventListener("click", goHome);
   $("#newBtn").addEventListener("click", goHome);
+
+  function setupCompareBtn() {
+    const newBtn = $("#newBtn");
+    if (!newBtn || $("#compareBtn")) return;
+    const compareBtn = el("a", {
+      class: "ghost-btn",
+      id: "compareBtn",
+      href: "/compare",
+      title: "Compare architectures",
+    },
+    el("svg", { viewBox: "0 0 24 24", width: "16", height: "16", "aria-hidden": "true" },
+      el("path", { d: "M9 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h4m6-18h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M12 3v18", fill: "none", stroke: "currentColor", "stroke-width": "2", "stroke-linecap": "round" })),
+    el("span", { text: "Compare" }));
+    newBtn.before(compareBtn);
+  }
+
+  function updateCompareHref() {
+    const btn = $("#compareBtn");
+    if (!btn) return;
+    const currentQ = q.value.trim() || state.turns[state.turns.length - 1]?.query || "";
+    btn.href = currentQ ? `/compare?q=${encodeURIComponent(currentQ)}` : "/compare";
+  }
+  q.addEventListener("input", updateCompareHref);
   document.addEventListener("keydown", (e) => {
     const typing = ["TEXTAREA", "INPUT", "SELECT"].includes(document.activeElement?.tagName);
     if (e.key === "/" && !typing && $("#lightbox").hidden) {
@@ -291,15 +318,18 @@
       this.answerEl.classList.remove("streaming");
       this.statusEl.remove();
       const secs = ((d && d.elapsed_ms) || performance.now() - this.t0) / 1000;
-      const nImg = [...this.slots.values()].filter((f) => f.classList.contains("ready")).length;
-      this.metaEl.append(
-        el("span", { class: "chip", text: MODE_CHIPS[this.opts.mode] || MODE_CHIPS.search }),
+      const nImg = [...this.slots.values()].filter((f) => f.classList.contains("ready") || f._filled).length;
+      const label = ARCH_CHIPS[state.arch] || MODE_CHIPS[this.opts.mode] || MODE_CHIPS.search;
+      this.metaEl.append(...[  // DOM append() would render null as text: filter first.
+        el("span", { class: "chip", text: label }),
         this.sources.length ? el("span", { class: "chip", text: `${this.sources.length} sources` }) : null,
         nImg ? el("span", { class: "chip", text: `${nImg} images` }) : null,
-        el("span", { class: "chip", text: `${secs.toFixed(1)}s` })
-      );
+        el("span", { class: "chip", text: `${secs.toFixed(1)}s` }),
+        secs < 1.5 && state.arch && state.arch !== "gemini"
+          ? el("span", { class: "chip", title: "Served from SerpApi's 1-hour cache", text: "cached" }) : null,
+      ].filter(Boolean));
       // Remove figures that never resolved.
-      for (const f of this.slots.values()) if (!f.classList.contains("ready")) f.classList.add("failed");
+      for (const f of this.slots.values()) if (!f.classList.contains("ready") && !f._filled) f.classList.add("failed");
       if (this.model) {
         this.footerEl.textContent = this.model.startsWith("serpapi:")
           ? "Answer by Google AI Mode (via SerpApi)"
@@ -366,13 +396,16 @@
       const cap = el("figcaption", {}, d.caption ? el("span", { class: "cap", text: d.caption }) : null);
       const fig = el("figure", { class: "slot" }, frame, cap);
       fig._img = img; fig._bg = bg; fig._cap = cap; fig._frame = frame;
+      fig._filled = false;
       setTimeout(() => (fig.style.animation = "none"), 400); // Avoid replaying on re-render.
       return fig;
     }
 
     fillFigure(fig, d) {
+      fig._filled = true;
       fig._img.onload = () => fig.classList.add("ready");
       fig._img.src = d.src;
+      if (fig._img.complete && fig._img.naturalWidth > 0) fig.classList.add("ready");
       fig._img.alt = d.caption || d.title || "";
       fig._bg.style.backgroundImage = `url("${d.src}")`;
       if (d.width && d.height) fig._img.style.aspectRatio = `${d.width} / ${d.height}`;
@@ -499,16 +532,18 @@
 
   async function runSearch(query) {
     if (state.busy) stopSearch();
-    const opts = { mode: state.mode, model: state.model, images: state.images, image: state.attachment };
+    const opts = { mode: state.mode, model: state.model, images: state.images, image: state.attachment, arch: state.arch };
     const first = document.body.classList.contains("landing");
     document.body.classList.remove("landing");
     mountComposer();
-    if (first) history.replaceState(null, "", `?q=${encodeURIComponent(query)}${state.mode !== "search" ? `&mode=${state.mode}` : ""}`);
+    if (first && !state.embed) history.replaceState(null, "", `?q=${encodeURIComponent(query)}${state.mode !== "search" ? `&mode=${state.mode}` : ""}`);
 
     const turn = new Turn(query, opts);
     state.turns.push(turn);
     $("#thread").append(turn.el);
-    turn.el.scrollIntoView({ behavior: first ? "auto" : "smooth", block: "start" });
+    if (!state.embed) {
+      turn.el.scrollIntoView({ behavior: first ? "auto" : "smooth", block: "start" });
+    }
 
     q.value = "";
     clearAttachment();
@@ -518,19 +553,69 @@
     state.controller = controller;
     setBusy(true);
     const historySnapshot = state.history.slice(-8);
+
+    const t0 = performance.now();
+    let ttft_ms = null;
+    let total_ms = null;
+    let hadError = false;
+
+    function sendMetrics(phase) {
+      if (!state.embed || !window.parent) return;
+      const nImg = [...turn.slots.values()].filter((f) => f.classList.contains("ready") || f._filled).length;
+      window.parent.postMessage({
+        type: "prism-metrics",
+        arch: state.arch,
+        phase,
+        ttft_ms,
+        total_ms,
+        images: nImg,
+        sources: turn.sources ? turn.sources.length : 0,
+        chars: turn.plainText().length,
+      }, "*");
+    }
+
+    const body = {
+      query,
+      mode: opts.mode,
+      model: opts.model,
+      images: opts.images,
+      image: opts.image,
+      history: historySnapshot,
+    };
+    if (state.arch) body.arch = state.arch;
+
     try {
       await streamSSE(
-        { query, mode: opts.mode, model: opts.model, images: opts.images, image: opts.image, history: historySnapshot },
+        body,
         (event, data) => {
-          if (event === "done") return turn.finish(data);
+          if (event === "text" && ttft_ms === null) {
+            ttft_ms = Math.round(performance.now() - t0);
+            sendMetrics("ttft");
+          }
+          if (event === "error") {
+            hadError = true;
+            total_ms = Math.round(performance.now() - t0);
+            turn.error(data);
+            sendMetrics("error");
+            return;
+          }
+          if (event === "done") {
+            total_ms = Math.round(performance.now() - t0);
+            turn.finish(data);
+            if (!hadError) sendMetrics("done");
+            return;
+          }
           const fn = turn[event];
           if (typeof fn === "function") fn.call(turn, data);
         },
         controller.signal
       );
     } catch (err) {
+      hadError = true;
+      total_ms = Math.round(performance.now() - t0);
       if (err.name !== "AbortError") turn.error({ message: err.message });
       else turn.error({ message: "Stopped." });
+      sendMetrics("error");
     } finally {
       turn.finish();
       if (state.controller === controller) {
@@ -538,6 +623,7 @@
         setBusy(false);
       }
       state.history.push({ role: "user", text: query }, { role: "model", text: turn.plainText().slice(0, 6000) });
+      updateCompareHref();
     }
   }
 
@@ -560,17 +646,23 @@
 
   // ------------------------------------------------------------------ Boot
   (async () => {
+    const params = new URLSearchParams(location.search);
+    state.embed = params.get("embed") === "1";
+    state.arch = params.get("arch") || null;
+    if (state.embed) {
+      document.body.classList.add("embed");
+    }
     mountComposer();
     autosize();
+    setupCompareBtn();
     try {
       applyServerConfig(await (await fetch("/api/config")).json());
     } catch (_) {
       applyServerConfig({ image_generation: false, ai_mode: false });
     }
-    const params = new URLSearchParams(location.search);
     if (params.get("mode") === "visual" && state.imageGeneration) setMode("visual");
     if (params.get("mode") === "aimode" && state.aiMode) setMode("aimode");
     if (params.get("q")) runSearch(params.get("q"));
-    else q.focus();
+    else if (!state.embed) q.focus();
   })();
 })();

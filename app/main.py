@@ -56,6 +56,14 @@ async def index():
   )
 
 
+@app.get("/compare", include_in_schema=False)
+async def compare():
+  return responses.FileResponse(
+      os.path.join(STATIC_DIR, "compare.html"),
+      headers={"Cache-Control": "no-cache"},
+  )
+
+
 @app.get("/health")
 async def healthz():
   return {"ok": True}
@@ -63,6 +71,7 @@ async def healthz():
 
 @app.get("/api/config")
 async def config():
+  archs = ["gemini"] + (["thirdparty", "aimode"] if settings.serpapi_api_key else [])
   return {
       "answer_model": settings.answer_model,
       "pro_model": settings.pro_model,
@@ -70,6 +79,7 @@ async def config():
       "lite_model": settings.lite_model,
       "image_generation": settings.allow_image_generation,
       "ai_mode": bool(settings.serpapi_api_key),
+      "archs": archs,
   }
 
 
@@ -81,10 +91,12 @@ def _sse(event: str, data: dict) -> bytes:
 async def search(req: pipeline.SearchRequest, request: fastapi.Request):
   if len(req.query) > settings.max_query_chars:
     raise fastapi.HTTPException(400, "Query is too long.")
-  if req.mode == "visual" and not settings.allow_image_generation:
+  if req.arch in ("thirdparty", "aimode") and not settings.serpapi_api_key:
+    raise fastapi.HTTPException(400, "This architecture needs SERPAPI_API_KEY")
+  if req.mode == "visual" and not req.arch and not settings.allow_image_generation:
     raise fastapi.HTTPException(
         400, "Visual mode is disabled (image generation is turned off).")
-  if req.mode == "aimode" and not settings.serpapi_api_key:
+  if req.mode == "aimode" and not req.arch and not settings.serpapi_api_key:
     raise fastapi.HTTPException(400, "AI Mode needs SERPAPI_API_KEY")
   if _rate_limited(_client_ip(request)):
     raise fastapi.HTTPException(429, "Too many searches, please wait a minute.")
@@ -98,10 +110,15 @@ async def search(req: pipeline.SearchRequest, request: fastapi.Request):
   async def emit(event: str, data: dict) -> None:
     await queue.put(_sse(event, data))
 
-  runners = {"visual": pipeline.run_visual, "aimode": pipeline.run_ai_mode}
-  runner = runners.get(req.mode, pipeline.run_search)
-  log.info("search mode=%s model=%s images=%s q=%r", req.mode, req.model,
-           req.images, req.query[:200])
+  if req.arch == "aimode":
+    runner = pipeline.run_ai_mode
+  elif req.arch in ("gemini", "thirdparty"):
+    runner = pipeline.run_search
+  else:
+    runners = {"visual": pipeline.run_visual, "aimode": pipeline.run_ai_mode}
+    runner = runners.get(req.mode, pipeline.run_search)
+  log.info("search mode=%s arch=%s model=%s images=%s q=%r", req.mode, req.arch,
+           req.model, req.images, req.query[:200])
 
   async def run():
     try:
