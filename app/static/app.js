@@ -465,7 +465,10 @@
   function sourceTitle(s) {
     if (s.title && s.title !== s.domain) return s.title;
     try {
-      const segs = new URL(s.url).pathname.split("/").filter(Boolean);
+      const u = new URL(s.url);
+      // Unresolved grounding redirects carry an opaque token, not a page slug.
+      if (u.hostname.endsWith("vertexaisearch.cloud.google.com")) return s.title || s.domain;
+      const segs = u.pathname.split("/").filter(Boolean);
       const slug = decodeURIComponent(segs[segs.length - 1] || "")
         .replace(/\.(html?|php|aspx?)$/i, "")
         .replace(/[-_+]+/g, " ")

@@ -74,3 +74,33 @@ Ways to cut A's cost:
 - Fewer image slots (`MAX_IMAGE_SLOTS`).
 - Batch several slots into one image search.
 - The 5,000 free grounding queries a month cover roughly 300–400 queries.
+
+## Vertex AI Search (Agent Search) images
+
+**Setup:** a fourth image provider indexes [100 curated image-rich sites](../app/vertex_search_sites.txt) with Vertex AI Search basic website search. Photo libraries, travel, architecture, nature, food, tech, museums and news are covered.
+- Basic website search allows only 50 URL patterns per data store and one data store per app, so the index is two data stores and two Enterprise engines, queried in parallel and merged.
+- Image search uses `params: {"search_type": 1}`, and results carry the original image URL plus the page URL.
+- Provision it with `python -m scripts.setup_vertex_search`.
+
+**Image search alone** (same 24 slots, same download, check and dedupe path, run on 2026-10-15):
+
+| Provider | Slots filled | Correct (of all slots) | Correct when filled | Search p50 / p90 | Slot p50 / p90 | Cost per slot search |
+|---|---|---|---|---|---|---|
+| Gemini image search | 83% | **75%** | **90%** | 3.5 s / 4.8 s | 7.0 s / 9.7 s | ~$0.03–0.04 (2–3 grounded queries) |
+| SerpApi Google Images | 83% | 67% | 80% | 8.6 s / 30 s | 11.4 s / 30 s | $0.015 |
+| **Vertex AI Search (100 sites)** | **100%** | 71% | 71% | **0.74 s / 1.26 s** | **4.3 s / 5.2 s** | **$0.008** (2 engines) |
+
+**End to end** (8 queries; D = Gemini-grounded answer + Vertex AI Search images, vs A):
+
+| Architecture | First text p50 | Full answer p50 | Images / query | Relevant images | Cost / query (3-query sample) |
+|---|---|---|---|---|---|
+| A. Gemini-native | 3.9 s | 17.6 s | 2.6 | 17/21 (81%) | $0.063–0.150 |
+| **D. Gemini + Vertex AI Search images** | 3.1 s | **15.4 s** | **3.0** | 17/24 (71%) | **$0.048–0.057** |
+
+**Takeaways:**
+- Vertex AI Search is the **fastest** image source by far, about 5× faster than Gemini image search and about 12× faster than SerpApi.
+- It **always fills** the slot.
+- It is the **cheapest per image**, and its cost is predictable: $0.004 per query, with 10,000 queries a month free.
+- The trade-off is precision. Results come only from the curated sites, so a slot sometimes gets a related image rather than the exact subject (6 "partial" verdicts). Gemini image search searches the whole web and was the most precise.
+- **D cuts architecture A's cost by roughly 40–60%** while keeping A's answer quality. Grounding drops to the answer's own web queries, and image search becomes cheap.
+- Tune the site list to the domain to raise precision. For example, a phone maker would add its own product and press sites.

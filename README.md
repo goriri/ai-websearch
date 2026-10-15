@@ -33,22 +33,24 @@ Prism supports three distinct search architectures, evaluated across 8 diverse v
 | **A. Gemini-native (default)** | 4.8 s | **20.5 s** | **2.9** | **19/23 (83%)** | $0.12–0.22 | 1 Vertex AI project, 0 external keys |
 | **B. Third-party search** | **4.3 s** | 33.2 s | 2.4 | 16/19 (84%) | ~$0.08 | Vertex AI + SerpApi (~5 searches/query) |
 | **C. SerpApi Google AI Mode** | 8.5 s (no stream) | **8.5 s** | 0.1 | 1/1 | **$0.015** | 1 SerpApi search/query, 0 Gemini |
+| **D. Gemini + Vertex AI Search images** | 3.1 s | 15.4 s | **3.0** | 17/24 (71%) | **$0.05–0.06** | Vertex AI + Vertex AI Search (2 engines over 100 curated sites) |
 
 \* Cost is measured per request (tokens × list prices) and shown live in the UI and the compare portal. Gemini 3 Google Search grounding is billed **per search query** ($14 / 1,000, web and image search alike), and each image slot's image search runs ~2–3 queries, so grounding is ~90% of architecture A's cost (e.g. $0.21 of $0.22: 15 queries vs ~$0.01 of tokens). The 5,000 free queries/month are ignored. SerpApi is priced at $0.015/search (Developer plan; `SERPAPI_COST_PER_SEARCH`).
 
 *   **Architecture A (Gemini-native):** Answers stream from `gemini-3.8-flash` using Grounding with Google Search. Image slots resolve concurrently using `gemini-3.1-flash-image` image search grounding and `gemini-3.1-flash-lite` visual re-ranking.
 *   **Architecture B (Third-party search):** SerpApi fetches Google web search results passed to `gemini-3.8-flash` as context. Image slots are retrieved via SerpApi Google Images and pass through the same Pillow normalization and visual re-ranking pipeline.
 *   **Architecture C (SerpApi Google AI Mode):** A single call to SerpApi `engine=google_ai_mode`. Parsed into text blocks and citations by `app/aimode.py`. Non-streaming; answers are ~3× shorter and rarely include images (1 image across 8 test queries, which failed to download).
+*   **Architecture D (Vertex AI Search images):** Same Gemini-grounded answer as A, but image slots are filled by [Vertex AI Search](scripts/setup_vertex_search.py) image search over [100 curated image-rich sites](app/vertex_search_sites.txt) (two basic-website data stores × 50 sites, Enterprise edition, `params.search_type=1`). Image search takes ~0.7 s instead of ~3.5 s and costs $0.004/query instead of ~$0.03–0.04 of per-query grounding, at slightly lower image precision (curated sites only).
 
 **Recommendation:** **Architecture A (Gemini-native)** is the recommended default: it delivers the fastest full answer (20.5 s vs 33.2 s), the highest image yield (2.9 vs 0.1), equal relevance (83%), and requires only a single Google Cloud project without third-party API keys. See the [full benchmark](docs/third-party-comparison.md).
 
 ## Compare portal
 
-Prism includes an interactive comparison portal at `/compare` to evaluate all three architectures side-by-side on identical queries.
+Prism includes an interactive comparison portal at `/compare` to evaluate all four architectures side-by-side on identical queries.
 
 ![Compare portal: the same query answered by all three architectures](docs/images/compare-portal.png)
 
-*Example: "Most beautiful libraries in the world". A finished in 20.8 s, 3 images, $0.12 (grounding $0.112); B in 39.6 s, 4 images, $0.084 (SerpApi $0.075); C in 8.7 s, 0 images, $0.015. A SerpApi result that comes back in under 1.5 s is served from its 1-hour cache, so it's labeled "cached" and excluded from the "best" badges.*
+*Example: "Iconic bridges of the world". A 16.1 s, 3 images, $0.135 (grounding $0.126); B 34.8 s, 1 image, $0.036; C 11.7 s, 1 image, $0.015; D 13.5 s, 4 images, $0.056 (Vertex AI Search $0.032). A SerpApi result that comes back in under 1.5 s is served from its 1-hour cache, so it's labeled "cached" and excluded from the "best" badges.*
 
 *   **Live Metrics:** Measures client-side time-to-first-token (TTFT), total completion time, source count, and filled image figures using sandboxed `<iframe>` panels running in embed mode (`/?embed=1&arch=...`).
 *   **Decoupled & Isolated:** Panels communicate metrics back to the portal via `window.parent.postMessage({type: "prism-metrics", ...})`, preventing state collisions between concurrent streams.
@@ -95,12 +97,14 @@ Env var | Default | Meaning
 `RERANK_IMAGES` | `true` | Visually verify web images using `LITE_MODEL`
 `ALLOW_IMAGE_GENERATION` | `false` | Cost control: `false` = only real web/Wikimedia photos, never generated images (Visual mode and AI image options are hidden)
 `IMAGE_SEARCH_MAX_TOKENS` | `128` | Output cap for the image-search call (a Gemini image needs >1,000 tokens, so generation is impossible)
-`IMAGE_PROVIDER` | `gemini` | Image search: `gemini` (Google image-search grounding), `serpapi` (Google Images via SerpApi), `brave`, `openverse` (keyless, CC only)
+`IMAGE_PROVIDER` | `gemini` | Image search: `gemini` (Google image-search grounding), `vertex_search` (Vertex AI Search over curated sites), `serpapi` (Google Images via SerpApi), `brave`, `openverse` (keyless, CC only)
 `WEB_PROVIDER` | `gemini` | Answer grounding: `gemini` (Grounding with Google Search) or `serpapi` (Google web results passed to Gemini as context)
 `SERPAPI_API_KEY` | `""` | API key for SerpApi (enables Architecture B and C)
 `SERPAPI_COST_PER_SEARCH` | `0.015` | USD per SerpApi search used in cost estimates (Developer plan)
 `PRICING_JSON` | — | JSON overriding Gemini list prices, e.g. `{"gemini-3.8-flash": {"input": 1.5, "output": 7.5}}`
 `BRAVE_API_KEY` | `""` | API key for Brave search provider
+`VERTEX_SEARCH_ENGINES` | `""` | Comma-separated Vertex AI Search engine IDs (enables `IMAGE_PROVIDER=vertex_search` and Architecture D); create them with `python -m scripts.setup_vertex_search`
+`VERTEX_SEARCH_COST_PER_QUERY` | `0.004` | USD per Vertex AI Search query (Enterprise edition list price) for cost estimates
 `SERPAPI_NO_CACHE` | `""` | Set to `1` to bypass SerpApi cache for fresh latency benchmarks
 `ENABLE_WIKIMEDIA` | `true` | Wikimedia Commons fallback when search yields no suitable image
 `MAX_IMAGE_SLOTS` | `6` | Maximum image slots per answer
