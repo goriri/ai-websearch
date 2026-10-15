@@ -9,7 +9,8 @@ needs no third-party API keys.
 
 **Demo recordings:** [demo/](demo/) ·
 **Design docs:** [architecture](docs/architecture.md),
-[design decisions](docs/design-decisions.md)
+[design decisions](docs/design-decisions.md),
+[Gemini vs SerpApi comparison](docs/third-party-comparison.md)
 
 <table>
 <tr>
@@ -40,6 +41,10 @@ needs no third-party API keys.
 *   **Visual mode (optional, needs `ALLOW_IMAGE_GENERATION=true`).** Gemini's **native interleaved text + image output**
     (`gemini-3.1-flash-image`, also grounded with Google Search) writes the
     answer and generates illustrations inline in a single streamed call.
+*   **Pluggable search providers.** Gemini grounding by default; SerpApi (Google web +
+    Google Images), Brave or Openverse via `WEB_PROVIDER` / `IMAGE_PROVIDER`, and an
+    experimental **AI Mode** (`mode=aimode`, one SerpApi Google AI Mode call). See the
+    [measured comparison](docs/third-party-comparison.md).
 *   **Multimodal input.** Attach, paste or drag in an image ("what is this
     building?").
 *   **Conversational follow-ups**, related-search suggestions, Fast/Pro model

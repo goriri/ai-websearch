@@ -16,6 +16,7 @@ Providers:
 """
 
 import logging
+import os
 from typing import Optional
 from urllib.parse import urlparse
 
@@ -32,12 +33,18 @@ _api_http: Optional[httpx.AsyncClient] = None
 def api_http() -> httpx.AsyncClient:
   global _api_http
   if _api_http is None:
-    _api_http = httpx.AsyncClient(timeout=httpx.Timeout(12.0, connect=4.0))
+    # SerpApi's uncached Google Images latency varies widely (~1-17 s).
+    _api_http = httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=5.0))
   return _api_http
 
 
 def _domain(url: str) -> str:
   return (urlparse(url).hostname or "").removeprefix("www.")
+
+
+def _cache_params() -> dict:
+  """SERPAPI_NO_CACHE=1 forces fresh results (benchmarks); cached hits are free."""
+  return {"no_cache": "true"} if os.environ.get("SERPAPI_NO_CACHE") else {}
 
 
 class ProviderError(RuntimeError):
@@ -62,7 +69,7 @@ async def serpapi_images(query: str, limit: int = 8):
   key = _require(settings.serpapi_api_key, "SerpApi")
   r = await api_http().get("https://serpapi.com/search.json", params={
       "engine": "google_images", "q": query, "api_key": key,
-      "hl": "en", "safe": "active", "ijn": 0,
+      "hl": "en", "safe": "active", "ijn": 0, **_cache_params(),
   })
   r.raise_for_status()
   out = []
@@ -159,6 +166,7 @@ async def serpapi_web(query: str, limit: int = 8) -> list[dict]:
   key = _require(settings.serpapi_api_key, "SerpApi")
   r = await api_http().get("https://serpapi.com/search.json", params={
       "engine": "google", "q": query, "api_key": key, "hl": "en", "num": limit,
+      **_cache_params(),
   })
   r.raise_for_status()
   data = r.json()
@@ -201,7 +209,8 @@ async def _serpapi_json(params: dict) -> dict:
   """
   key = _require(settings.serpapi_api_key, "SerpApi")
   r = await api_http().get(
-      _SERPAPI_URL, params=params | {"api_key": key}, timeout=_AI_TIMEOUT
+      _SERPAPI_URL, params=params | {"api_key": key} | _cache_params(),
+      timeout=_AI_TIMEOUT,
   )
   try:
     data = r.json()
