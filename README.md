@@ -136,10 +136,16 @@ Authorize IAP and grant users access:
 PN=$(gcloud projects describe $PROJECT --format='value(projectNumber)')
 gcloud run services add-iam-policy-binding prism-search --region us-central1 --project $PROJECT \
   --member serviceAccount:service-$PN@gcp-sa-iap.iam.gserviceaccount.com --role roles/run.invoker
+# Let everyone in your organization(s) sign in; no per-user allow-list needed.
+# (Use --member=user:<email> or group:<email> to restrict further.)
 gcloud iap web add-iam-policy-binding --resource-type=cloud-run --service=prism-search \
-  --region=us-central1 --project $PROJECT --member=user:<you@example.com> \
+  --region=us-central1 --project $PROJECT --member=domain:<your-domain.com> \
   --role=roles/iap.httpsResourceAccessor --condition=None
 ```
+
+Anyone with an account in the granted domain(s) can open the app after a Google
+sign-in. Fully public access (`allUsers`) is deliberately not recommended: every
+query spends Gemini and SerpApi quota.
 
 > [!NOTE]
 > Cloud Run reserves URL paths that end in `z` (such as `/healthz`), so the
