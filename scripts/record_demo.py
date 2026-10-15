@@ -182,7 +182,7 @@ async def scenario_mobile(b, url):
   await smooth_scroll(b, speed=700)
 
 
-COMPARE_QUERY = "Best hot springs to visit in Japan"
+COMPARE_QUERY = "Most beautiful libraries in the world"
 COMPARE_DONE = ("[...document.querySelectorAll('[data-metric=total]')]"
                 ".every(e => /\\d+(\\.\\d+)?s/.test(e.textContent))")
 FRAMES_FOLLOW = """(() => { for (const f of document.querySelectorAll('iframe.compare-frame')) {

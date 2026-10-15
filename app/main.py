@@ -10,7 +10,7 @@ import time
 import fastapi
 from fastapi import responses, staticfiles
 
-from app import pipeline
+from app import cost, pipeline
 from app.config import settings
 
 logging.basicConfig(
@@ -121,12 +121,22 @@ async def search(req: pipeline.SearchRequest, request: fastapi.Request):
            req.model, req.images, req.query[:200])
 
   async def run():
+    meter = cost.start()
+    cost_emitted = False
+
+    async def wrapped_emit(event: str, data: dict) -> None:
+      nonlocal cost_emitted
+      if event == "done" and not cost_emitted:
+        cost_emitted = True
+        await emit("cost", meter.summary())
+      await emit(event, data)
+
     try:
-      await runner(req, emit)
+      await runner(req, wrapped_emit)
     except Exception as e:  # pylint: disable=broad-except
       log.exception("pipeline crashed")
-      await emit("error", {"message": str(e)})
-      await emit("done", {})
+      await wrapped_emit("error", {"message": str(e)})
+      await wrapped_emit("done", {})
     finally:
       await queue.put(None)
 

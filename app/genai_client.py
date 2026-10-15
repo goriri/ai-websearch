@@ -7,9 +7,12 @@ import google.auth
 from google import genai
 from google.genai import types
 
+from app import cost
 from app.config import settings
 
 log = logging.getLogger(__name__)
+
+_instrument = cost.instrument
 
 
 @functools.cache
@@ -28,7 +31,7 @@ def project_id() -> str:
 def client() -> genai.Client:
   proj = project_id()
   log.info("Using Vertex AI project=%s location=%s", proj, settings.location)
-  return genai.Client(
+  c = genai.Client(
       vertexai=True,
       project=proj,
       location=settings.location,
@@ -36,3 +39,4 @@ def client() -> genai.Client:
           retry_options=types.HttpRetryOptions(attempts=3, initial_delay=1.0),
       ),
   )
+  return _instrument(c)

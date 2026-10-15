@@ -273,6 +273,7 @@
     }
 
     // --- event handlers
+    cost(d) { this.costData = d; }
     status(d) { this.setStatus(STAGES[d.stage] || d.message); }
     text(d) { this.md += d.delta; this.queueRender(); }
     slot(d) {
@@ -320,11 +321,23 @@
       const secs = ((d && d.elapsed_ms) || performance.now() - this.t0) / 1000;
       const nImg = [...this.slots.values()].filter((f) => f.classList.contains("ready") || f._filled).length;
       const label = ARCH_CHIPS[state.arch] || MODE_CHIPS[this.opts.mode] || MODE_CHIPS.search;
+      let costChip = null;
+      if (this.costData && typeof this.costData.total_usd === "number") {
+        const total = this.costData.total_usd;
+        const text = (total > 0 && total < 0.0001) ? "< $0.0001" : `≈ $${total.toFixed(4)}`;
+        const lines = (this.costData.items || []).map((it) => {
+          const usdStr = typeof it.usd === "number" ? `$${it.usd.toFixed(4)}` : "";
+          return `${it.label} · ${it.detail} — ${usdStr}`;
+        });
+        if (this.costData.note) lines.push(this.costData.note);
+        costChip = el("span", { class: "chip", title: lines.join("\n"), text });
+      }
       this.metaEl.append(...[  // DOM append() would render null as text: filter first.
         el("span", { class: "chip", text: label }),
         this.sources.length ? el("span", { class: "chip", text: `${this.sources.length} sources` }) : null,
         nImg ? el("span", { class: "chip", text: `${nImg} images` }) : null,
         el("span", { class: "chip", text: `${secs.toFixed(1)}s` }),
+        costChip,
         secs < 1.5 && state.arch && state.arch !== "gemini"
           ? el("span", { class: "chip", title: "Served from SerpApi's 1-hour cache", text: "cached" }) : null,
       ].filter(Boolean));
@@ -562,7 +575,7 @@
     function sendMetrics(phase) {
       if (!state.embed || !window.parent) return;
       const nImg = [...turn.slots.values()].filter((f) => f.classList.contains("ready") || f._filled).length;
-      window.parent.postMessage({
+      const payload = {
         type: "prism-metrics",
         arch: state.arch,
         phase,
@@ -571,7 +584,12 @@
         images: nImg,
         sources: turn.sources ? turn.sources.length : 0,
         chars: turn.plainText().length,
-      }, "*");
+      };
+      if (phase === "done" && turn.costData) {
+        payload.cost_usd = turn.costData.total_usd;
+        payload.cost_items = turn.costData.items;
+      }
+      window.parent.postMessage(payload, "*");
     }
 
     const body = {

@@ -73,7 +73,7 @@ class ApiTest(unittest.TestCase):
     self.assertEqual(r.status_code, 200)
     self.assertTrue(r.headers["content-type"].startswith("text/event-stream"))
     evs = _parse_sse(r.text)
-    self.assertEqual([e for e, _ in evs], ["text", "slot", "done"])
+    self.assertEqual([e for e, _ in evs], ["text", "slot", "cost", "done"])  # cost precedes done
     self.assertEqual(evs[0][1], {"delta": "Hello"})
 
   def test_visual_mode_dispatch(self):

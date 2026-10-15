@@ -186,11 +186,11 @@ body.compare-page {
 
 .metrics-strip {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 6px;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 4px;
   background: var(--bg-soft);
   border-radius: 10px;
-  padding: 6px 8px;
+  padding: 6px 4px;
 }
 
 .metric-cell {
@@ -202,19 +202,32 @@ body.compare-page {
 }
 
 .metric-name {
-  font-size: 10.5px;
+  font-size: 10px;
   color: var(--fg-mute);
   text-transform: uppercase;
   letter-spacing: .02em;
 }
 
 .metric-val {
-  font-size: 13.5px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--fg);
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.cost-breakdown {
+  font-size: 11px;
+  color: var(--fg-mute);
+  text-align: center;
+  min-height: 16px;
+  margin-top: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .badge-best {
@@ -265,4 +278,19 @@ body.compare-page {
   background: var(--bg-soft);
   margin: 14px;
   border: 1px dashed var(--border);
+}
+
+.compare-footnote {
+  padding: 10px 20px 18px;
+  font-size: 11.5px;
+  color: var(--fg-mute);
+  text-align: center;
+  line-height: 1.4;
+}
+
+@media (max-width: 480px) {
+  .metrics-strip {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+  }
 }

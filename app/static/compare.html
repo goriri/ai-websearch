@@ -62,7 +62,12 @@
               <span class="metric-name">Sources</span>
               <span class="metric-val" data-metric="sources">—</span>
             </div>
+            <div class="metric-cell">
+              <span class="metric-name">Cost</span>
+              <span class="metric-val" data-metric="cost">—</span>
+            </div>
           </div>
+          <div class="cost-breakdown"></div>
         </div>
         <div class="col-content">
           <iframe class="compare-frame" loading="lazy" title="Gemini-native"></iframe>
@@ -94,7 +99,12 @@
               <span class="metric-name">Sources</span>
               <span class="metric-val" data-metric="sources">—</span>
             </div>
+            <div class="metric-cell">
+              <span class="metric-name">Cost</span>
+              <span class="metric-val" data-metric="cost">—</span>
+            </div>
           </div>
+          <div class="cost-breakdown"></div>
         </div>
         <div class="col-content">
           <iframe class="compare-frame" loading="lazy" title="Third-party search (SerpApi + Gemini)"></iframe>
@@ -126,7 +136,12 @@
               <span class="metric-name">Sources</span>
               <span class="metric-val" data-metric="sources">—</span>
             </div>
+            <div class="metric-cell">
+              <span class="metric-name">Cost</span>
+              <span class="metric-val" data-metric="cost">—</span>
+            </div>
           </div>
+          <div class="cost-breakdown"></div>
         </div>
         <div class="col-content">
           <iframe class="compare-frame" loading="lazy" title="SerpApi Google AI Mode"></iframe>
@@ -135,6 +150,7 @@
       </section>
 
     </div>
+    <footer class="compare-footnote">Cost = measured tokens × list prices (USD): Gemini per Google Cloud pricing, Google Search grounding $14/1K queries, SerpApi $0.015/search (Developer plan). Free tiers ignored.</footer>
   </main>
 
   <script src="/static/compare.js"></script>

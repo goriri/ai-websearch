@@ -22,6 +22,7 @@ from urllib.parse import urlparse
 
 import httpx
 
+from app import cost
 from app.config import settings
 from app.textproc import clean_title
 
@@ -72,6 +73,7 @@ async def serpapi_images(query: str, limit: int = 8):
       "hl": "en", "safe": "active", "ijn": 0, **_cache_params(),
   })
   r.raise_for_status()
+  cost.record_serpapi("google_images")
   out = []
   for it in r.json().get("images_results", [])[: limit * 2]:
     url = it.get("original") or it.get("thumbnail")
@@ -169,6 +171,7 @@ async def serpapi_web(query: str, limit: int = 8) -> list[dict]:
       **_cache_params(),
   })
   r.raise_for_status()
+  cost.record_serpapi("google")
   data = r.json()
   results = []
   ab = data.get("answer_box") or {}
@@ -222,6 +225,7 @@ async def _serpapi_json(params: dict) -> dict:
   r.raise_for_status()
   if not isinstance(data, dict):
     raise ProviderError("SerpApi returned an invalid response")
+  cost.record_serpapi(params.get("engine", "google"))
   return data
 
 

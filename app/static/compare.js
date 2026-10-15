@@ -32,6 +32,8 @@
         total_ms: null,
         images: 0,
         sources: 0,
+        cost_usd: null,
+        cost_items: null,
       };
     }
   }
@@ -48,36 +50,87 @@
     }
   }
 
+  function formatCost(usd) {
+    if (usd == null) return "—";
+    if (usd > 0 && usd < 0.0001) return "< $0.0001";
+    return `$${usd.toFixed(4)}`;
+  }
+
+  function formatCostBreakdown(items) {
+    if (!items || !items.length) return "";
+    const groups = new Map();
+    for (const it of items) {
+      let group = it.label;
+      if (it.label && it.label.toLowerCase().startsWith("gemini")) {
+        group = "Gemini";
+      } else if (it.label && it.label.toLowerCase().includes("grounding")) {
+        group = "Grounding";
+      } else if (it.label && it.label.toLowerCase().includes("serpapi")) {
+        group = "SerpApi";
+      }
+      groups.set(group, (groups.get(group) || 0) + (it.usd || 0));
+    }
+    const parts = [];
+    for (const [group, usd] of groups.entries()) {
+      const usdStr = usd > 0 && usd < 0.001 ? usd.toFixed(4) : usd.toFixed(3);
+      parts.push(`${group} $${usdStr}`);
+    }
+    return parts.join(" · ");
+  }
+
+  function setBreakdown(col, text) {
+    const el = col.querySelector(".cost-breakdown");
+    if (!el) return;
+    el.textContent = text;
+  }
+
   function evaluateBest() {
     const active = availableArchs
       .map((a) => panelState[a])
       .filter((p) => p && p.done && !p.error && p.total_ms != null && !isCached(p));
 
-    if (active.length === 0) return;
-
-    // Fastest Full answer
-    let minTime = Infinity;
-    for (const p of active) {
-      if (p.total_ms < minTime) minTime = p.total_ms;
-    }
-    if (minTime < Infinity) {
+    if (active.length > 0) {
+      // Fastest Full answer
+      let minTime = Infinity;
       for (const p of active) {
-        if (p.total_ms === minTime) {
-          const valStr = (p.total_ms / 1000).toFixed(1) + "s";
-          setMetric(p.col, "total", valStr, true);
+        if (p.total_ms < minTime) minTime = p.total_ms;
+      }
+      if (minTime < Infinity) {
+        for (const p of active) {
+          if (p.total_ms === minTime) {
+            const valStr = (p.total_ms / 1000).toFixed(1) + "s";
+            setMetric(p.col, "total", valStr, true);
+          }
+        }
+      }
+
+      // Most Images
+      let maxImages = 0;
+      for (const p of active) {
+        if (p.images > maxImages) maxImages = p.images;
+      }
+      if (maxImages > 0) {
+        for (const p of active) {
+          if (p.images === maxImages) {
+            setMetric(p.col, "images", String(p.images), true);
+          }
         }
       }
     }
 
-    // Most Images
-    let maxImages = 0;
-    for (const p of active) {
-      if (p.images > maxImages) maxImages = p.images;
+    // Lowest Cost among all finished panels without error
+    const withCost = availableArchs
+      .map((a) => panelState[a])
+      .filter((p) => p && p.done && !p.error && p.cost_usd != null);
+
+    let minCost = Infinity;
+    for (const p of withCost) {
+      if (p.cost_usd < minCost) minCost = p.cost_usd;
     }
-    if (maxImages > 0) {
-      for (const p of active) {
-        if (p.images === maxImages) {
-          setMetric(p.col, "images", String(p.images), true);
+    if (minCost < Infinity) {
+      for (const p of withCost) {
+        if (p.cost_usd === minCost) {
+          setMetric(p.col, "cost", formatCost(p.cost_usd), true);
         }
       }
     }
@@ -98,11 +151,15 @@
       p.total_ms = null;
       p.images = 0;
       p.sources = 0;
+      p.cost_usd = null;
+      p.cost_items = null;
 
       setMetric(p.col, "ttft", "…");
       setMetric(p.col, "total", "…");
       setMetric(p.col, "images", "…");
       setMetric(p.col, "sources", "…");
+      setMetric(p.col, "cost", "…");
+      setBreakdown(p.col, "");
 
       p.iframe.src = `/?embed=1&arch=${encodeURIComponent(arch)}&q=${encodeURIComponent(q)}`;
     }
@@ -129,6 +186,9 @@
       p.images = d.images != null ? d.images : 0;
       p.sources = d.sources != null ? d.sources : 0;
 
+      p.cost_usd = d.cost_usd != null ? d.cost_usd : null;
+      p.cost_items = d.cost_items || [];
+
       if (d.ttft_ms != null) {
         setMetric(p.col, "ttft", (d.ttft_ms / 1000).toFixed(1) + "s");
       }
@@ -137,6 +197,10 @@
       }
       setMetric(p.col, "images", String(p.images));
       setMetric(p.col, "sources", String(p.sources));
+      if (p.cost_usd != null) {
+        setMetric(p.col, "cost", formatCost(p.cost_usd));
+      }
+      setBreakdown(p.col, formatCostBreakdown(p.cost_items));
     } else if (d.phase === "error") {
       p.running = false;
       p.done = true;
@@ -144,10 +208,14 @@
       p.total_ms = d.total_ms;
       p.images = d.images != null ? d.images : 0;
       p.sources = d.sources != null ? d.sources : 0;
+      p.cost_usd = null;
+      p.cost_items = null;
 
       setMetric(p.col, "total", "Error");
       if (p.images) setMetric(p.col, "images", String(p.images));
       if (p.sources) setMetric(p.sources, "sources", String(p.sources));
+      setMetric(p.col, "cost", "—");
+      setBreakdown(p.col, "");
     }
 
     const allFinished = availableArchs.every((a) => {
