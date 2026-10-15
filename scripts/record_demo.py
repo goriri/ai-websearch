@@ -182,12 +182,52 @@ async def scenario_mobile(b, url):
   await smooth_scroll(b, speed=700)
 
 
+COMPARE_QUERY = "Best hot springs to visit in Japan"
+COMPARE_DONE = ("[...document.querySelectorAll('[data-metric=total]')]"
+                ".every(e => /\\d+(\\.\\d+)?s/.test(e.textContent))")
+FRAMES_FOLLOW = """(() => { for (const f of document.querySelectorAll('iframe.compare-frame')) {
+  try { const w = f.contentWindow, d = w.document.documentElement;
+        const t = Math.max(0, d.scrollHeight - w.innerHeight - 120);
+        if (t > w.scrollY + 4) w.scrollTo({top: t, behavior: 'smooth'}); } catch (e) {} } })()"""
+
+
+async def scenario_compare(b, url):
+  """The /compare portal: one query, three architectures streaming side by side."""
+  await b.call("Page.navigate", url=url.rstrip("/") + "/compare")
+  await b.sleep(2)
+  await b.js("document.querySelector('#compareInput').focus()")
+  await b.type(COMPARE_QUERY)
+  await b.sleep(0.6)
+  await b.js("document.querySelector('#compareForm').requestSubmit()")
+  t = time.monotonic()
+  while time.monotonic() - t < 150:
+    await b.js(FRAMES_FOLLOW, await_promise=False)
+    if await b.js(COMPARE_DONE):
+      break
+    await asyncio.sleep(0.8)
+  await b.sleep(2.5)  # Let the "best" badges and last images settle.
+  # Synchronized smooth scroll through all three answers.
+  await b.js("document.querySelectorAll('iframe.compare-frame').forEach(f => { try { f.contentWindow.scrollTo(0, 0); } catch (e) {} })")
+  await b.sleep(1.5)
+  fps, speed, y = 30, 650, 0
+  while True:
+    moved = await b.js(f"""(() => {{ let any = false; for (const f of document.querySelectorAll('iframe.compare-frame')) {{
+        try {{ const w = f.contentWindow, max = w.document.documentElement.scrollHeight - w.innerHeight;
+              if ({y} < max) {{ w.scrollTo(0, Math.min({y}, max)); any = true; }} }} catch (e) {{}} }} return any; }})()""")
+    if not moved:
+      break
+    y += speed / fps
+    await b.sleep(1 / fps)
+  await b.sleep(2)
+
+
 SCENARIOS = {
     "search-mode": (scenario_search, (1280, 800)),
     "visual-mode": (scenario_visual, (1280, 800)),
     "follow-up": (scenario_followup, (1280, 800)),
     "image-query": (scenario_image_query, (1280, 800)),
     "mobile": (scenario_mobile, (390, 844)),
+    "compare": (scenario_compare, (1600, 900)),
 }
 
 
@@ -254,7 +294,7 @@ async def record(name, url, out_dir, image_path, gif, port):
       out_dir.mkdir(parents=True, exist_ok=True)
       encode(b.frames, out_dir / f"{name}.mp4",
              gif=(out_dir / f"{name}.gif") if gif else None,
-             width=720 if w > 600 else 320)
+             width=960 if w > 1400 else (720 if w > 600 else 320))
   finally:
     proc.terminate()
     shutil.rmtree(prof, ignore_errors=True)
