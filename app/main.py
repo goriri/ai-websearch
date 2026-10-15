@@ -72,6 +72,8 @@ async def healthz():
 @app.get("/api/config")
 async def config():
   archs = ["gemini"] + (["thirdparty", "aimode"] if settings.serpapi_api_key else [])
+  if settings.vertex_search_engines:
+    archs.append("vertexsearch")
   return {
       "answer_model": settings.answer_model,
       "pro_model": settings.pro_model,
@@ -93,6 +95,8 @@ async def search(req: pipeline.SearchRequest, request: fastapi.Request):
     raise fastapi.HTTPException(400, "Query is too long.")
   if req.arch in ("thirdparty", "aimode") and not settings.serpapi_api_key:
     raise fastapi.HTTPException(400, "This architecture needs SERPAPI_API_KEY")
+  if req.arch == "vertexsearch" and not settings.vertex_search_engines:
+    raise fastapi.HTTPException(400, "This architecture needs VERTEX_SEARCH_ENGINES")
   if req.mode == "visual" and not req.arch and not settings.allow_image_generation:
     raise fastapi.HTTPException(
         400, "Visual mode is disabled (image generation is turned off).")
@@ -112,7 +116,7 @@ async def search(req: pipeline.SearchRequest, request: fastapi.Request):
 
   if req.arch == "aimode":
     runner = pipeline.run_ai_mode
-  elif req.arch in ("gemini", "thirdparty"):
+  elif req.arch in ("gemini", "thirdparty", "vertexsearch"):
     runner = pipeline.run_search
   else:
     runners = {"visual": pipeline.run_visual, "aimode": pipeline.run_ai_mode}

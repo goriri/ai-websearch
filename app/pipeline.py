@@ -56,7 +56,7 @@ class Turn(pydantic.BaseModel):
 class SearchRequest(pydantic.BaseModel):
   query: str = pydantic.Field(min_length=1)
   mode: Literal["search", "visual", "aimode"] = "search"
-  arch: Optional[Literal["gemini", "thirdparty", "aimode"]] = None
+  arch: Optional[Literal["gemini", "thirdparty", "aimode", "vertexsearch"]] = None
   model: Literal["fast", "pro"] = "fast"
   images: Literal["auto", "web", "ai"] = "web"
   history: list[Turn] = pydantic.Field(default_factory=list, max_length=20)
@@ -293,8 +293,14 @@ async def _run_search(
 
   await emit("status", {"stage": "search", "message": "Searching the web"})
 
-  web = "serpapi" if req.arch == "thirdparty" else ("gemini" if req.arch == "gemini" else settings.web_provider)
-  image_provider = "serpapi" if req.arch == "thirdparty" else ("gemini" if req.arch == "gemini" else settings.image_provider)
+  if req.arch == "thirdparty":
+    web, image_provider = "serpapi", "serpapi"
+  elif req.arch == "vertexsearch":
+    web, image_provider = "gemini", "vertex_search"
+  elif req.arch == "gemini":
+    web, image_provider = "gemini", "gemini"
+  else:
+    web, image_provider = settings.web_provider, settings.image_provider
 
   # Third-party web search (WEB_PROVIDER=serpapi): fetch results first and pass
   # them to Gemini as context instead of using the Google Search tool.

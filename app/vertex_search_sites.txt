@@ -1,0 +1,114 @@
+# 100 image-rich sites indexed by the Vertex AI Search provider.
+# Chosen to cover Prism's typical visual queries: places & travel, nature &
+# wildlife, architecture & design, food, products & tech, art & culture, science,
+# plus general photo libraries. One domain per line (subdomains included).
+#
+# Photo libraries & stock
+commons.wikimedia.org
+en.wikipedia.org
+flickr.com
+unsplash.com
+pexels.com
+pixabay.com
+gettyimages.com
+shutterstock.com
+alamy.com
+istockphoto.com
+stock.adobe.com
+500px.com
+pinterest.com
+behance.net
+dribbble.com
+# Travel & places
+nationalgeographic.com
+lonelyplanet.com
+cntraveler.com
+travelandleisure.com
+tripadvisor.com
+atlasobscura.com
+timeout.com
+afar.com
+roughguides.com
+fodors.com
+nps.gov
+visitjapan.jp
+japan-guide.com
+visitscotland.com
+visitbritain.com
+# Architecture & interior design
+archdaily.com
+dezeen.com
+designboom.com
+architecturaldigest.com
+dwell.com
+houzz.com
+elledecor.com
+designmilk.com
+zaha-hadid.com
+wallpaper.com
+# Nature, wildlife & science
+allaboutbirds.org
+audubon.org
+inaturalist.org
+worldwildlife.org
+bbcearth.com
+smithsonianmag.com
+nasa.gov
+science.nasa.gov
+esa.int
+nhm.ac.uk
+# Food & drink
+seriouseats.com
+bonappetit.com
+foodandwine.com
+epicurious.com
+allrecipes.com
+justonecookbook.com
+eater.com
+saveur.com
+food52.com
+tasteatlas.com
+# Products & technology
+gsmarena.com
+theverge.com
+engadget.com
+cnet.com
+techradar.com
+wired.com
+apple.com
+samsung.com
+ztedevices.com
+nubia.com
+# Art, culture & museums
+metmuseum.org
+moma.org
+louvre.fr
+britishmuseum.org
+artsandculture.google.com
+nga.gov
+rijksmuseum.nl
+tate.org.uk
+guggenheim.org
+vam.ac.uk
+# News & magazines with strong photography
+bbc.com
+theguardian.com
+nytimes.com
+reuters.com
+apnews.com
+cnn.com
+time.com
+vogue.com
+gq.com
+newyorker.com
+# Outdoors, sports & autos
+outsideonline.com
+rei.com
+alltrails.com
+backpacker.com
+motortrend.com
+caranddriver.com
+topgear.com
+espn.com
+redbull.com
+olympics.com

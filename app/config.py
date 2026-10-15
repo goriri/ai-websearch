@@ -11,6 +11,11 @@ def _bool(name: str, default: bool) -> bool:
   return val.strip().lower() in ("1", "true", "yes", "on")
 
 
+def _tuple(name: str) -> tuple[str, ...]:
+  val = os.environ.get(name, "")
+  return tuple(x.strip() for x in val.split(",") if x.strip())
+
+
 @dataclasses.dataclass(frozen=True)
 class Settings:
   """All tunables for the app. Every field can be overridden via env vars."""
@@ -53,6 +58,10 @@ class Settings:
   web_provider: str = os.environ.get("WEB_PROVIDER", "gemini")
   serpapi_api_key: str = os.environ.get("SERPAPI_API_KEY", "")
   brave_api_key: str = os.environ.get("BRAVE_API_KEY", "")
+  vertex_search_engines: tuple[str, ...] = _tuple("VERTEX_SEARCH_ENGINES")
+  vertex_search_location: str = os.environ.get(
+      "VERTEX_SEARCH_LOCATION", "global"
+  )
   max_image_slots: int = int(os.environ.get("MAX_IMAGE_SLOTS", "6"))
   image_concurrency: int = int(os.environ.get("IMAGE_CONCURRENCY", "6"))
   image_max_px: int = int(os.environ.get("IMAGE_MAX_PX", "1024"))

@@ -147,9 +147,9 @@ class TimedSearchWrapper:
     self.orig_search = orig_search
     self.search_times = []
 
-  async def search(self, q, ctx):
+  async def search(self, q, ctx, **kwargs):
     t = time.monotonic()
-    out = await self.orig_search(q, ctx)
+    out = await self.orig_search(q, ctx, **kwargs)
     self.search_times.append((time.monotonic() - t, len(out)))
     return out
 
@@ -247,6 +247,7 @@ async def main():
       or ["gemini", "openverse"]
       + (["serpapi"] if settings.serpapi_api_key else [])
       + (["brave"] if settings.brave_api_key else [])
+      + (["vertex_search"] if settings.vertex_search_engines else [])
   )
   cache_path = os.path.join(args.out_dir, "bench_slots.json")
   out_path = os.path.join(args.out_dir, "bench_providers.json")

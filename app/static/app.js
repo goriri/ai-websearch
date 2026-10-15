@@ -36,7 +36,7 @@
   };
 
   const MODE_CHIPS = { search: "⌕ Search", visual: "✦ Visual", aimode: "◎ AI Mode" };
-  const ARCH_CHIPS = { gemini: "A · Gemini-native", thirdparty: "B · SerpApi + Gemini", aimode: "C · SerpApi AI Mode" };
+  const ARCH_CHIPS = { gemini: "A · Gemini-native", thirdparty: "B · SerpApi + Gemini", aimode: "C · SerpApi AI Mode", vertexsearch: "D · Vertex AI Search images" };
   const FIGURE_WAIT = {
     search: "Finding the best image…",
     visual: "Generating illustration…",
@@ -338,7 +338,7 @@
         nImg ? el("span", { class: "chip", text: `${nImg} images` }) : null,
         el("span", { class: "chip", text: `${secs.toFixed(1)}s` }),
         costChip,
-        secs < 1.5 && state.arch && state.arch !== "gemini"
+        secs < 1.5 && ["thirdparty", "aimode"].includes(state.arch)
           ? el("span", { class: "chip", title: "Served from SerpApi's 1-hour cache", text: "cached" }) : null,
       ].filter(Boolean));
       // Remove figures that never resolved.

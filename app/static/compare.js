@@ -2,7 +2,7 @@
 (() => {
   // SerpApi serves identical queries from a free 1-hour cache in ~0.3 s; such
   // results are labeled and excluded from the "fastest" badge.
-  const isCached = (p) => p.arch !== "gemini" && p.total_ms != null && p.total_ms < 1500;
+  const isCached = (p) => ["thirdparty", "aimode"].includes(p.arch) && p.total_ms != null && p.total_ms < 1500;
 
   "use strict";
 
@@ -67,6 +67,8 @@
         group = "Grounding";
       } else if (it.label && it.label.toLowerCase().includes("serpapi")) {
         group = "SerpApi";
+      } else if (it.label && (it.label === "Vertex AI Search" || it.label.toLowerCase().includes("vertex"))) {
+        group = "Vertex Search";
       }
       groups.set(group, (groups.get(group) || 0) + (it.usd || 0));
     }

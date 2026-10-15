@@ -132,7 +132,10 @@ async def judge(context, jpeg):
 async def run(arch, q):
   collector = SearchCollector()
   req = pipeline.SearchRequest(
-      query=q, images="web", mode="aimode" if arch == "aimode" else "search"
+      query=q,
+      images="web",
+      mode="aimode" if arch == "aimode" else "search",
+      arch=arch if arch in ("gemini", "thirdparty", "aimode", "vertexsearch") else None,
   )
   # "thirdparty": same Prism pipeline, but SerpApi for web results + Google Images.
   runner = pipeline.run_ai_mode if arch == "aimode" else pipeline.run_search
@@ -178,13 +181,16 @@ async def main():
 
   archs = ["gemini"] + (
       ["aimode", "thirdparty"] if settings.serpapi_api_key else []
+  ) + (
+      ["vertexsearch"] if settings.vertex_search_engines else []
   )
   rows = []
   for arch in archs:  # Sequential: "thirdparty" flips global provider settings.
     tp = arch == "thirdparty"
+    vs = arch == "vertexsearch"
     object.__setattr__(settings, "web_provider", "serpapi" if tp else "gemini")
     object.__setattr__(
-        settings, "image_provider", "serpapi" if tp else "gemini"
+        settings, "image_provider", "serpapi" if tp else ("vertex_search" if vs else "gemini")
     )
     rows += await asyncio.gather(*(run(arch, q) for q in QUERIES))
   with open(out_path, "w") as f:

@@ -31,6 +31,16 @@ def serpapi_per_search() -> float:
   return 0.015
 
 
+def vertex_search_per_query() -> float:
+  val = os.environ.get("VERTEX_SEARCH_COST_PER_QUERY")
+  if val is not None:
+    try:
+      return float(val)
+    except ValueError:
+      pass
+  return 0.004
+
+
 def get_prices() -> dict[str, dict[str, float]]:
   prices = {k: dict(v) for k, v in PRICES.items()}
   raw = os.environ.get("PRICING_JSON")
@@ -108,6 +118,7 @@ class Meter:
     self.gemini3_grounding_queries: int = 0
     self.gemini2_grounded_prompts: int = 0
     self.serpapi_calls: list[str] = []
+    self.vertex_search_queries: int = 0
 
   def add_genai(
       self,
@@ -154,6 +165,9 @@ class Meter:
 
   def add_serpapi(self, engine: str) -> None:
     self.serpapi_calls.append(str(engine or "google"))
+
+  def add_vertex_search(self, count: int = 1) -> None:
+    self.vertex_search_queries += int(count)
 
   def summary(self) -> dict:
     items = []
@@ -224,12 +238,28 @@ class Meter:
           "usd": round(usd, 6),
       })
 
+    if self.vertex_search_queries > 0:
+      cnt = self.vertex_search_queries
+      price = vertex_search_per_query()
+      items.append({
+          "label": "Vertex AI Search",
+          "detail": f"{cnt} query" if cnt == 1 else f"{cnt} queries",
+          "usd": round(cnt * price, 6),
+      })
+
     total_usd = round(sum(it["usd"] for it in items), 6)
     rate = serpapi_per_search()
     note = (
         "List prices (USD), free tiers ignored; "
         f"SerpApi at ${rate:g}/search."
     )
+    if self.vertex_search_queries > 0:
+      vs_rate = vertex_search_per_query()
+      note = (
+          "List prices (USD), free tiers ignored; "
+          f"SerpApi at ${rate:g}/search; "
+          f"Vertex AI Search ${vs_rate:g}/query (Enterprise)."
+      )
     return {
         "total_usd": total_usd,
         "items": items,
@@ -256,6 +286,12 @@ def record_serpapi(engine: str) -> None:
   m = _current.get()
   if m is not None:
     m.add_serpapi(engine)
+
+
+def record_vertex_search(count: int = 1) -> None:
+  m = _current.get()
+  if m is not None:
+    m.add_vertex_search(count)
 
 
 async def _stream_with_meter(

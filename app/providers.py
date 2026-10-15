@@ -15,20 +15,37 @@ Providers:
           Mode / AI Overview answer (used by the "aimode" architecture)
 """
 
+import asyncio
+import collections
 import logging
 import os
 from typing import Optional
 from urllib.parse import urlparse
 
+import google.auth
+import google.auth.transport.requests
 import httpx
 
-from app import cost
+from app import cost, genai_client
 from app.config import settings
 from app.textproc import clean_title
 
 log = logging.getLogger(__name__)
 
 _api_http: Optional[httpx.AsyncClient] = None
+_vertex_credentials = None
+
+
+async def _get_vertex_credentials():
+  global _vertex_credentials
+  if _vertex_credentials is None:
+    _vertex_credentials, _ = google.auth.default(
+        scopes=["https://www.googleapis.com/auth/cloud-platform"]
+    )
+  if not _vertex_credentials.valid:
+    req = google.auth.transport.requests.Request()
+    await asyncio.to_thread(_vertex_credentials.refresh, req)
+  return _vertex_credentials
 
 
 def api_http() -> httpx.AsyncClient:
@@ -151,10 +168,102 @@ async def _openverse_once(query: str, limit: int):
   return out
 
 
+async def _query_vertex_engine(
+    engine: str, query: str, token: str, project: str
+) -> list[dict]:
+  loc = settings.vertex_search_location
+  url = (
+      f"https://discoveryengine.googleapis.com/v1/projects/{project}/locations/{loc}"
+      f"/collections/default_collection/engines/{engine}/servingConfigs/default_search:search"
+  )
+  headers = {
+      "Authorization": f"Bearer {token}",
+      "X-Goog-User-Project": project,
+      "Content-Type": "application/json",
+  }
+  body = {
+      "query": query,
+      "pageSize": 10,
+      "params": {"search_type": 1},
+  }
+  r = await api_http().post(url, json=body, headers=headers, timeout=15.0)
+  r.raise_for_status()
+  cost.record_vertex_search()
+  return r.json().get("results", [])
+
+
+async def vertex_search_images(query: str, limit: int = 8):
+  """Curated web image results via Vertex AI Search (Agent Search) engines."""
+  from app.images import Candidate
+
+  if not settings.vertex_search_engines:
+    raise ProviderError("Vertex AI Search engines are not configured")
+
+  creds = await _get_vertex_credentials()
+  token = creds.token
+  project = genai_client.project_id()
+
+  raw_results = await asyncio.gather(
+      *[_query_vertex_engine(e, query, token, project) for e in settings.vertex_search_engines],
+      return_exceptions=True,
+  )
+  valid_results = []
+  for eng, res in zip(settings.vertex_search_engines, raw_results):
+    if isinstance(res, Exception):
+      log.warning("Vertex AI Search engine %s failed: %s", eng, res)
+      continue
+    valid_results.append(res)
+
+  queues = [collections.deque(r) for r in valid_results]
+  out: list[Candidate] = []
+  seen_links: set[str] = set()
+
+  while len(out) < limit and any(queues):
+    progress = False
+    for q in queues:
+      while q:
+        it = q.popleft()
+        struct = (it.get("document") or {}).get("derivedStructData") or {}
+        link = struct.get("link") or ""
+        if not (link.startswith("http://") or link.startswith("https://")):
+          continue
+        img_data = struct.get("image") or {}
+        w = img_data.get("width")
+        if w is not None:
+          try:
+            if int(w) < 300:
+              continue
+          except (ValueError, TypeError):
+            pass
+        if link in seen_links:
+          continue
+        seen_links.add(link)
+        ctx = img_data.get("contextLink") or link
+        display_link = struct.get("displayLink") or ""
+        domain = display_link.removeprefix("www.") or _domain(ctx)
+        title = clean_title(struct.get("title") or "")
+        out.append(Candidate(
+            image_url=link,
+            source_url=ctx,
+            title=title,
+            domain=domain,
+            kind="web",
+        ))
+        progress = True
+        break
+      if len(out) >= limit:
+        break
+    if not progress:
+      break
+
+  return out
+
+
 IMAGE_PROVIDERS = {
     "serpapi": serpapi_images,
     "brave": brave_images,
     "openverse": openverse_images,
+    "vertex_search": vertex_search_images,
 }
 
 

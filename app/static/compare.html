@@ -31,7 +31,7 @@
         <button type="button" class="example" data-q="Best street food spots in Bangkok"><span class="em">🍜</span>Bangkok street food</button>
         <button type="button" class="example" data-q="ZTE nubia latest flagship phones comparison"><span class="em">📱</span>ZTE nubia phones</button>
       </div>
-      <div class="compare-note">B and C use SerpApi (≈5 and 1 searches per query)</div>
+      <div class="compare-note">B and C use SerpApi (≈5 and 1 searches per query); D uses Vertex AI Search (≈2 queries per image)</div>
     </div>
   </header>
 
@@ -149,8 +149,45 @@
         </div>
       </section>
 
+      <section class="compare-col" data-arch="vertexsearch">
+        <div class="col-header">
+          <div class="col-title-line">
+            <span class="col-letter">D</span>
+            <h2 class="col-name">Gemini + Vertex AI Search images</h2>
+          </div>
+          <p class="col-desc">Answer: Gemini + Google Search grounding · Images: Vertex AI Search over 100 curated image sites</p>
+          <div class="metrics-strip">
+            <div class="metric-cell">
+              <span class="metric-name">First text</span>
+              <span class="metric-val" data-metric="ttft">—</span>
+            </div>
+            <div class="metric-cell">
+              <span class="metric-name">Full answer</span>
+              <span class="metric-val" data-metric="total">—</span>
+            </div>
+            <div class="metric-cell">
+              <span class="metric-name">Images</span>
+              <span class="metric-val" data-metric="images">—</span>
+            </div>
+            <div class="metric-cell">
+              <span class="metric-name">Sources</span>
+              <span class="metric-val" data-metric="sources">—</span>
+            </div>
+            <div class="metric-cell">
+              <span class="metric-name">Cost</span>
+              <span class="metric-val" data-metric="cost">—</span>
+            </div>
+          </div>
+          <div class="cost-breakdown"></div>
+        </div>
+        <div class="col-content">
+          <iframe class="compare-frame" loading="lazy" title="Gemini + Vertex AI Search images"></iframe>
+          <div class="disabled-card" hidden>Needs VERTEX_SEARCH_ENGINES on the server</div>
+        </div>
+      </section>
+
     </div>
-    <footer class="compare-footnote">Cost = measured tokens × list prices (USD): Gemini per Google Cloud pricing, Google Search grounding $14/1K queries, SerpApi $0.015/search (Developer plan). Free tiers ignored.</footer>
+    <footer class="compare-footnote">Cost = measured tokens × list prices (USD): Gemini per Google Cloud pricing, Google Search grounding $14/1K queries, SerpApi $0.015/search (Developer plan), Vertex AI Search $0.004/query (Enterprise). Free tiers ignored.</footer>
   </main>
 
   <script src="/static/compare.js"></script>
