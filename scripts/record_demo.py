@@ -312,7 +312,10 @@ async def main():
   ap.add_argument("--image", default="demo/assets/query-photo.jpg",
                   help="Photo used by the image-query scenario.")
   ap.add_argument("--gif", action="store_true", help="Also write 2x-speed GIFs.")
+  ap.add_argument("--compare-query", default=COMPARE_QUERY,
+                  help="Query typed in the compare scenario.")
   args = ap.parse_args()
+  globals()["COMPARE_QUERY"] = args.compare_query
   names = args.only or list(SCENARIOS)
   image = pathlib.Path(args.image).resolve()
   # Each scenario gets its own browser so they can run in parallel.

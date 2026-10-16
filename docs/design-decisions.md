@@ -97,7 +97,10 @@ streaming without a framework.
 
 ## 9. Two answer tiers and a fallback model
 
-**Decision.** "Fast" uses `gemini-3.8-flash` with low thinking. "Pro" uses
+**Decision.** "Fast" uses `gemini-3.5-flash-lite` with low thinking (it was
+`gemini-3.8-flash` until 2026-10-16; in a side-by-side run Flash-Lite reached
+first text in 3.0 s vs 5.1 s and finished in 6.2 s vs 16.9 s, at a lower token
+price). "Pro" uses
 `gemini-3.1-pro-preview` with high thinking. `gemini-2.5-flash` is the fallback
 when a model fails before any text is emitted. All model IDs are environment
 variables.

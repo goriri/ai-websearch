@@ -27,7 +27,7 @@ class Settings:
   location: str = os.environ.get("GOOGLE_CLOUD_LOCATION", "global")
 
   # Text answer models ("Fast" and "Pro" in the UI) + a fallback.
-  answer_model: str = os.environ.get("ANSWER_MODEL", "gemini-3.8-flash")
+  answer_model: str = os.environ.get("ANSWER_MODEL", "gemini-3.5-flash-lite")
   pro_model: str = os.environ.get("PRO_MODEL", "gemini-3.1-pro-preview")
   fallback_model: str = os.environ.get("FALLBACK_MODEL", "gemini-2.5-flash")
 

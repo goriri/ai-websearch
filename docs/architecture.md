@@ -33,7 +33,7 @@ flowchart LR
     AIM["aimode.py<br/>AI Mode parser"]
   end
   subgraph Vertex["Gemini on Vertex AI (global endpoint)"]
-    ANS["gemini-3.8-flash / gemini-3.1-pro-preview<br/>+ Google Search grounding"]
+    ANS["gemini-3.5-flash-lite / gemini-3.1-pro-preview<br/>+ Google Search grounding"]
     IMGM["gemini-3.1-flash-image<br/>image_search grounding / generation"]
     LITE["gemini-3.1-flash-lite<br/>visual re-rank, related questions"]
   end
@@ -79,11 +79,11 @@ Module                | Responsibility
 Prism supports three distinct architectural configurations for generating grounded answers with interleaved media:
 
 1. **Architecture A: Gemini-native (default).**
-   - **Answer text:** `gemini-3.8-flash` (or Pro) with Vertex AI Grounding with Google Search, streamed via SSE.
+   - **Answer text:** `gemini-3.5-flash-lite` (or Pro) with Vertex AI Grounding with Google Search, streamed via SSE.
    - **Images:** Concurrently resolved per section slot using `gemini-3.1-flash-image` Google image search grounding, followed by visual re-ranking via `gemini-3.1-flash-lite`.
    - **Infrastructure:** Pure first-party Google Cloud (Vertex AI). No external API keys or third-party service dependencies required.
 2. **Architecture B: Third-party search (SerpApi + Gemini).**
-   - **Answer text:** Google web search results fetched via SerpApi (`engine=google`), supplied to `gemini-3.8-flash` as context. Gemini streams the response and writes numerical citations `[n]`.
+   - **Answer text:** Google web search results fetched via SerpApi (`engine=google`), supplied to `gemini-3.5-flash-lite` as context. Gemini streams the response and writes numerical citations `[n]`.
    - **Images:** Resolved per slot via SerpApi Google Images (`engine=google_images`), feeding into the same download, normalization, and visual re-ranking pipeline.
    - **Infrastructure:** Requires `SERPAPI_API_KEY`.
 3. **Architecture C: SerpApi Google AI Mode (`aimode`).**
@@ -98,12 +98,12 @@ The request payload accepts an optional `arch` parameter (`"gemini"` | `"thirdpa
 flowchart TD
   Req["POST /api/search<br/>{query, arch: 'gemini' | 'thirdparty' | 'aimode'}"] --> Choice{arch}
 
-  Choice -- "gemini (default)" --> A1["gemini-3.8-flash<br/>+ Google Search grounding"]
+  Choice -- "gemini (default)" --> A1["gemini-3.5-flash-lite<br/>+ Google Search grounding"]
   A1 -- "Streamed Markdown + slots" --> A2["Per-slot: gemini-3.1-flash-image<br/>(Google image search grounding)"]
   A2 --> V["Visual Re-rank<br/>(gemini-3.1-flash-lite)"]
 
   Choice -- "thirdparty" --> B1["SerpApi Google Web Search<br/>(engine=google)"]
-  B1 -- "Top results as context" --> B2["gemini-3.8-flash<br/>(Streamed text + [n] cites + slots)"]
+  B1 -- "Top results as context" --> B2["gemini-3.5-flash-lite<br/>(Streamed text + [n] cites + slots)"]
   B2 --> B3["Per-slot: SerpApi Google Images<br/>(engine=google_images)"]
   B3 --> V
 
@@ -118,7 +118,7 @@ sequenceDiagram
   autonumber
   participant B as Browser
   participant S as FastAPI (pipeline)
-  participant A as Answer model<br/>(gemini-3.8-flash + Google Search)
+  participant A as Answer model<br/>(gemini-3.5-flash-lite + Google Search)
   participant I as Image resolver<br/>(per slot, concurrent)
   participant L as gemini-3.1-flash-lite
 

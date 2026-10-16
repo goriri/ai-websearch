@@ -35,10 +35,12 @@ Prism supports three distinct search architectures, evaluated across 8 diverse v
 | **C. SerpApi Google AI Mode** | 8.5 s (no stream) | **8.5 s** | 0.1 | 1/1 | **$0.015** | 1 SerpApi search/query, 0 Gemini |
 | **D. Gemini + Vertex AI Search images** | 3.1 s | 15.4 s | **3.0** | 17/24 (71%) | **$0.05–0.06** | Vertex AI + Vertex AI Search (2 engines over 100 curated sites) |
 
+The table was measured with `gemini-3.8-flash` as the answer model; the default is now `gemini-3.5-flash-lite` (side by side on one query: first text 3.0 s vs 5.1 s, full answer 6.2 s vs 16.9 s, lower token price). See the compare example below for a fresh four-way run.
+
 \* Cost is measured per request (tokens × list prices) and shown live in the UI and the compare portal. Gemini 3 Google Search grounding is billed **per search query** ($14 / 1,000, web and image search alike), and each image slot's image search runs ~2–3 queries, so grounding is ~90% of architecture A's cost (e.g. $0.21 of $0.22: 15 queries vs ~$0.01 of tokens). The 5,000 free queries/month are ignored. SerpApi is priced at $0.015/search (Developer plan; `SERPAPI_COST_PER_SEARCH`).
 
-*   **Architecture A (Gemini-native):** Answers stream from `gemini-3.8-flash` using Grounding with Google Search. Image slots resolve concurrently using `gemini-3.1-flash-image` image search grounding and `gemini-3.1-flash-lite` visual re-ranking.
-*   **Architecture B (Third-party search):** SerpApi fetches Google web search results passed to `gemini-3.8-flash` as context. Image slots are retrieved via SerpApi Google Images and pass through the same Pillow normalization and visual re-ranking pipeline.
+*   **Architecture A (Gemini-native):** Answers stream from `gemini-3.5-flash-lite` using Grounding with Google Search. Image slots resolve concurrently using `gemini-3.1-flash-image` image search grounding and `gemini-3.1-flash-lite` visual re-ranking.
+*   **Architecture B (Third-party search):** SerpApi fetches Google web search results passed to `gemini-3.5-flash-lite` as context. Image slots are retrieved via SerpApi Google Images and pass through the same Pillow normalization and visual re-ranking pipeline.
 *   **Architecture C (SerpApi Google AI Mode):** A single call to SerpApi `engine=google_ai_mode`. Parsed into text blocks and citations by `app/aimode.py`. Non-streaming; answers are ~3× shorter and rarely include images (1 image across 8 test queries, which failed to download).
 *   **Architecture D (Vertex AI Search images):** Same Gemini-grounded answer as A, but image slots are filled by [Vertex AI Search](scripts/setup_vertex_search.py) image search over [100 curated image-rich sites](app/vertex_search_sites.txt) (two basic-website data stores × 50 sites, Enterprise edition, `params.search_type=1`). Image search takes ~0.7 s instead of ~3.5 s and costs $0.004/query instead of ~$0.03–0.04 of per-query grounding, at slightly lower image precision (curated sites only).
 
@@ -48,9 +50,9 @@ Prism supports three distinct search architectures, evaluated across 8 diverse v
 
 Prism includes an interactive comparison portal at `/compare` to evaluate all four architectures side-by-side on identical queries.
 
-![Compare portal: the same query answered by all three architectures](docs/images/compare-portal.png)
+![Compare portal: the same query answered by all four architectures](docs/images/compare-portal.png)
 
-*Example: "Best places to see cherry blossoms in Japan" (all four panels on one 1920×1080 screen). A 47.4 s, 3 images, $0.120 (grounding $0.112); B 37.0 s, 2 images, $0.052; C 5.8 s, 0 images, $0.015; D 27.3 s, 4 images, $0.056 (Vertex AI Search $0.032). A SerpApi result that comes back in under 1.5 s is served from its 1-hour cache, so it's labeled "cached" and excluded from the "best" badges.*
+*Example (answer model `gemini-3.5-flash-lite`): "Best fall foliage road trips in New England" (all four panels on one 1920×1080 screen). A 16.1 s, 3 images, $0.132 (grounding $0.126); B 14.9 s, 3 images, $0.066; C 19.7 s, 0 images, $0.015; D **10.5 s**, 3 images, $0.044 (Vertex AI Search $0.024). A SerpApi result that comes back in under 1.5 s is served from its 1-hour cache, so it's labeled "cached" and excluded from the "best" badges.*
 
 *   **Live Metrics:** Measures client-side time-to-first-token (TTFT), total completion time, source count, and filled image figures using sandboxed `<iframe>` panels running in embed mode (`/?embed=1&arch=...`).
 *   **Decoupled & Isolated:** Panels communicate metrics back to the portal via `window.parent.postMessage({type: "prism-metrics", ...})`, preventing state collisions between concurrent streams.
@@ -89,7 +91,7 @@ Env var | Default | Meaning
 ---|---|---
 `GOOGLE_CLOUD_PROJECT` | ADC project | Vertex AI project ID
 `GOOGLE_CLOUD_LOCATION` | `global` | Vertex AI location
-`ANSWER_MODEL` | `gemini-3.8-flash` | "Fast" text answer model
+`ANSWER_MODEL` | `gemini-3.5-flash-lite` | "Fast" text answer model
 `PRO_MODEL` | `gemini-3.1-pro-preview` | "Pro" text answer model
 `FALLBACK_MODEL` | `gemini-2.5-flash` | Used if the answer model fails before streaming
 `IMAGE_MODEL` | `gemini-3.1-flash-image` | Image search grounding, generation, and Visual mode

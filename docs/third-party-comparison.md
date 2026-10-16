@@ -2,6 +2,9 @@
 
 All numbers are from live runs on 2026-10-15, using the SerpApi free plan and Gemini on Vertex AI. The SerpApi cache was turned off (`no_cache`) so latencies are fair, and runs went one after another so they didn't load each other. Images were judged by `gemini-3.8-flash`. Total SerpApi usage was 127 of the 250 free searches.
 
+> [!NOTE]
+> These runs used `gemini-3.8-flash` as the answer model. Since 2026-10-16 the default is `gemini-3.5-flash-lite`, which is faster and cheaper per token, so architectures A, B and D now return text sooner than shown here.
+
 ## Architectures compared
 
 | | A. Gemini-native (default) | B. Third-party search | C. SerpApi Google AI Mode |

@@ -8,6 +8,7 @@ import os
 from typing import Any, AsyncIterator, Optional
 
 DEFAULT_PRICES: dict[str, dict[str, float]] = {
+    "gemini-3.5-flash-lite": {"input": 0.30, "output": 2.50, "image_output": 0.0},
     "gemini-3.8-flash": {"input": 0.75, "output": 3.75, "image_output": 0.0},
     "gemini-3.1-pro-preview": {"input": 2.00, "output": 12.00, "image_output": 0.0},
     "gemini-3.1-flash-image": {"input": 0.50, "output": 3.00, "image_output": 60.00},
